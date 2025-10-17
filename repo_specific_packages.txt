@@ -1,8 +1,9 @@
 #############################################
 # Frontend Repository-Specific Installation
-# These commands run in the frontend directory
-# Executed line by line as sysr user
 #############################################
+
+# Install PM2 globally
+sudo npm install -g pm2
 
 # Install Node.js dependencies
 npm install
