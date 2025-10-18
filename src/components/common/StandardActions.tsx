@@ -4,7 +4,6 @@ import React from 'react';
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { Pencil, Trash2, Eye } from 'lucide-react';
 import { EntityTableAction } from '@/components/organisms/EntityTable';
-import { Button } from '@/components/ui/button';
 
 type ID = string | number;
 
@@ -26,31 +25,19 @@ export function createStandardEntityActions<T extends { id: ID }>({
   return [
     {
       label: 'View',
-      icon: (
-        <Button variant="ghost" size="icon" aria-label={`View ${resourceName}`}>
-          <Eye className="h-4 w-4" />
-        </Button>
-      ),
+      icon: <Eye className="h-4 w-4" />,
       onClick: (item) => router.push(`/${resource}/${item.id}`),
       ariaLabel: `View ${resourceName}`,
     },
     {
       label: 'Edit',
-      icon: (
-        <Button variant="ghost" size="icon" aria-label={`Edit ${resourceName}`}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-      ),
+      icon: <Pencil className="h-4 w-4" />,
       onClick: (item) => router.push(`/${resource}/${item.id}/edit`),
       ariaLabel: `Edit ${resourceName}`,
     },
     {
       label: 'Delete',
-      icon: (
-        <Button variant="ghost" size="icon" aria-label={`Delete ${resourceName}`}>
-          <Trash2 className="h-4 w-4 text-red-500" />
-        </Button>
-      ),
+      icon: <Trash2 className="h-4 w-4 text-red-500" />,
       onClick: (item) => handleDelete(item.id as string),
       ariaLabel: `Delete ${resourceName}`,
       disabled: isDeleting,

@@ -57,6 +57,12 @@ export default function DriverForm({
     defaultValues: { name: "", mobile: "", status: "Active", vehicle_id: null, ...initialData },
   });
 
+  // Log form values for debugging
+  const formValues = watch();
+  useEffect(() => {
+    console.log("Current form values:", formValues);
+  }, [formValues]);
+
   // Watch for vehicle_id changes to show warnings
   const watchedVehicleId = watch("vehicle_id");
 
