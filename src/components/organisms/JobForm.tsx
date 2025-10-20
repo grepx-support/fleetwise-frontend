@@ -225,6 +225,17 @@ export interface JobFormProps {
 
 const JobForm: React.FC<JobFormProps> = (props) => {
   const { job, initialData, onSave, onCancel, onDelete, isLoading = false } = props;
+
+  // Debug: log initialData provided to the form (copied job context)
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[JobForm] initialData from context:', {
+      customer_id: (initialData as any)?.customer_id,
+      service_type: (initialData as any)?.service_type,
+      vehicle_type: (initialData as any)?.vehicle_type,
+      vehicle_type_id: (initialData as any)?.vehicle_type_id,
+    });
+  }, [initialData]);
   
   // Determine if fields should be locked based on job status
   // Helper to check if a field should be locked
@@ -272,6 +283,22 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
+
+  // Safeguard: ensure vehicle_type is always a string on mount (catches copied object shapes)
+  useEffect(() => {
+    setFormData(prev => {
+      if (prev.vehicle_type && typeof prev.vehicle_type !== 'string') {
+        const vt = prev.vehicle_type as any;
+        return {
+          ...prev,
+          vehicle_type: vt && (vt.name || vt.label || vt.value) ? (vt.name || vt.label || vt.value) : String(vt)
+        };
+      }
+      return prev;
+    });
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { lookup: dropoffLookup, result: dropoffAddressResult, loading: dropoffAddressLoading, error: dropoffAddressError } = useAddressLookup();
   
   const router = useRouter();
@@ -286,7 +313,14 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   
   
   // State
-  const [formData, setFormData] = useState<JobFormData>({ ...defaultJobValues, ...initialData });
+  // Normalize incoming initialData.vehicle_type to string if provided as object
+  const normalizedInitialData = { ...initialData } as Partial<JobFormData>;
+  if (normalizedInitialData && (normalizedInitialData as any).vehicle_type && typeof (normalizedInitialData as any).vehicle_type !== 'string') {
+    const vt = (normalizedInitialData as any).vehicle_type;
+    normalizedInitialData.vehicle_type = vt && (vt.name || vt.label || vt.value) ? (vt.name || vt.label || vt.value) : String(vt);
+  }
+
+  const [formData, setFormData] = useState<JobFormData>({ ...defaultJobValues, ...normalizedInitialData });
   const [errors, setErrors] = useState<Partial<Record<keyof JobFormData, string>>>({});
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'conflict'>('idle');
   const [driverConflictWarning, setDriverConflictWarning] = useState<string>('');
@@ -327,6 +361,17 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     prevServiceTypeRef.current = formData.service_type || '';
     prevVehicleTypeRef.current = formData.vehicle_type || '';
   }, [formData.customer_id, formData.service_type, formData.vehicle_type]); // Fixed dependencies to only include the specific fields we're checking
+
+    // Debug: log formData on every update so we can trace when values change
+    useEffect(() => {
+      // eslint-disable-next-line no-console
+      console.log('[JobForm] formData updated:', {
+        customer_id: formData.customer_id,
+        service_type: formData.service_type,
+        vehicle_type: formData.vehicle_type,
+        vehicle_type_id: formData.vehicle_type_id,
+      });
+    }, [formData]);
   
 
   // Only call pricing API when vehicle type changes, not on service change
@@ -338,11 +383,111 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   //   }
   // }, [formData.vehicle_type]);
 
-  const { data: customerServicePricing } = useCustomerServicePricing(
-    formData.customer_id ?? 0,
-    formData.service_type,
-    formData.vehicle_type
+  // Compute explicit, normalized parameters to pass to pricing API
+  const customerIdForPricing = Number(formData.customer_id) > 0 ? Number(formData.customer_id) : undefined;
+  const serviceTypeForPricing = formData.service_type && typeof formData.service_type === 'string' && formData.service_type.trim() !== ''
+    ? formData.service_type.trim()
+    : undefined;
+
+  // Force-normalize vehicle_type to string whenever it changes to avoid object shapes
+  useEffect(() => {
+    if (formData.vehicle_type && typeof formData.vehicle_type !== 'string') {
+      // eslint-disable-next-line no-console
+      console.warn('[JobForm] vehicle_type is not a string, fixing:', formData.vehicle_type);
+      let normalized = '';
+      if (typeof formData.vehicle_type === 'object' && formData.vehicle_type !== null) {
+        normalized = (formData.vehicle_type as any).name ||
+                     (formData.vehicle_type as any).label ||
+                     (formData.vehicle_type as any).value || '';
+      } else {
+        normalized = String(formData.vehicle_type);
+      }
+
+      if (normalized && normalized !== '[object Object]') {
+        setFormData(prev => ({
+          ...prev,
+          vehicle_type: normalized
+        }));
+      }
+    }
+  }, [formData.vehicle_type]); // This will run whenever vehicle_type changes
+
+  // Compute a defensive vehicleTypeForPricing with logging
+  const vehicleTypeForPricing = (() => {
+    const vt = formData.vehicle_type;
+
+    // Log for debugging
+    // eslint-disable-next-line no-console
+    console.log('[vehicleTypeForPricing] Input:', {
+      raw: vt,
+      type: typeof vt,
+      isString: typeof vt === 'string',
+      value: (vt as any)?.toString?.()
+    });
+
+    if (!vt) return undefined;
+
+    if (typeof vt === 'string') {
+      const trimmed = vt.trim();
+      // Reject the [object Object] string
+      if (trimmed === '[object Object]' || trimmed === '') {
+        return undefined;
+      }
+      return trimmed;
+    }
+
+    if (typeof vt === 'object') {
+      const extracted = (vt as any).name || (vt as any).label || (vt as any).value;
+      if (extracted && typeof extracted === 'string') {
+        const trimmed = extracted.trim();
+        if (trimmed !== '[object Object]') {
+          return trimmed;
+        }
+      }
+    }
+
+    return undefined;
+  })();
+
+  // eslint-disable-next-line no-console
+  console.log('[JobForm][Pricing] Final vehicleTypeForPricing:', vehicleTypeForPricing);
+
+  // Debug: log the parameters used for the pricing hook (before calling it)
+  // eslint-disable-next-line no-console
+  console.log('[JobForm] Before useCustomerServicePricing hook:', {
+    formData_customer_id: formData.customer_id,
+    formData_service_type: formData.service_type,
+    formData_vehicle_type: formData.vehicle_type,
+    customerIdForPricing,
+    serviceTypeForPricing,
+    vehicleTypeForPricing,
+    shouldCall: !!(customerIdForPricing && serviceTypeForPricing && vehicleTypeForPricing),
+    timestamp: new Date().toISOString()
+  });
+
+  const { data: customerServicePricing, isLoading: pricingLoading } = useCustomerServicePricing(
+    customerIdForPricing,
+    serviceTypeForPricing,
+    vehicleTypeForPricing
   );
+
+  // Log when pricing data comes back
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[JobForm] customerServicePricing updated:', customerServicePricing);
+  }, [customerServicePricing]);
+
+  // Debugging: log pricing parameters so we can trace why the lookup may not fire
+  // eslint-disable-next-line no-console
+  console.debug('[JobForm][Pricing] params:', {
+    customer_id: formData.customer_id,
+    customerIdForPricing,
+    service_type: formData.service_type,
+    serviceTypeForPricing,
+    vehicle_type_raw: formData.vehicle_type,
+    vehicleTypeForPricing,
+    enabled: !!(customerIdForPricing && serviceTypeForPricing && vehicleTypeForPricing)
+  });
 
   // Contractor pricing (move after formData is initialized)
   const { data: contractorPricing = [], refetch: refetchPricing } = useContractorServicePricing(
@@ -505,12 +650,19 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       const { date, time } = getCurrentDateTime();
       
       // Create initial form data with default values
+      // Normalize any vehicle_type from initialData before merging
+      const normalizedInit = { ...initialData } as Partial<JobFormData>;
+      if (normalizedInit && (normalizedInit as any).vehicle_type && typeof (normalizedInit as any).vehicle_type !== 'string') {
+        const vt = (normalizedInit as any).vehicle_type;
+        normalizedInit.vehicle_type = vt && (vt.name || vt.label || vt.value) ? (vt.name || vt.label || vt.value) : String(vt);
+      }
+
       const initialFormData = {
         ...defaultJobValues,
         pickup_date: date,
         pickup_time: time,
         contractor_id: undefined,
-        ...initialData
+        ...normalizedInit
       };
       
       // Determine initial status
@@ -904,7 +1056,9 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         dropoff_loc3_price: safeNumber(formData.dropoff_loc3_price),
         dropoff_loc4_price: safeNumber(formData.dropoff_loc4_price),
         dropoff_loc5_price: safeNumber(formData.dropoff_loc5_price),
-        vehicle_type: formData.vehicle_type,
+        vehicle_type: typeof formData.vehicle_type === 'string'
+          ? formData.vehicle_type
+          : (formData.vehicle_type && ((formData as any).vehicle_type.name || (formData as any).vehicle_type.label)) || '',
         vehicle_type_id: formData.vehicle_type_id
       };
       // Remove final_price so backend always recalculates
