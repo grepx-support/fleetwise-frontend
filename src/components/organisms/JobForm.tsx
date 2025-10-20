@@ -234,6 +234,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
 
   // Multiple address lookup hooks for different fields
   // Refs to track previous values
+  const prevCustomerIdRef = useRef<number>(0);
   const prevServiceTypeRef = useRef<string>('');
   const prevVehicleTypeRef = useRef<string>('');
   const isCheckingConflict = useRef(false);
@@ -266,8 +267,6 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         customer_id: job.customer_id || prev.customer_id,
         service_type: job.service_type || prev.service_type,
         vehicle_type: vehicleTypeName,
-        // Optionally reset base_price to 0 to force effect to update it
-        base_price: 0
       }));
   setUserModifiedPricing(false);
     }
@@ -309,31 +308,39 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   useEffect(() => {
     // Check if service_type or vehicle_type has actually changed
     if (
+      (formData.customer_id && formData.customer_id !== prevCustomerIdRef.current) ||
       (formData.service_type && formData.service_type !== prevServiceTypeRef.current) ||
       (formData.vehicle_type && formData.vehicle_type !== prevVehicleTypeRef.current)
     ) {
       // Reset the userModifiedPricing flag to allow automatic pricing updates
       setUserModifiedPricing(false);
+        // Optional: Log the change for debugging
+      console.log('[Pricing Reset] Field changed - resetting userModifiedPricing flag', {
+      customer: { old: prevCustomerIdRef.current, new: formData.customer_id },
+      service: { old: prevServiceTypeRef.current, new: formData.service_type },
+      vehicle: { old: prevVehicleTypeRef.current, new: formData.vehicle_type }
+    });
     }
     
     // Update the refs with current values
+    prevCustomerIdRef.current = formData.customer_id || 0;
     prevServiceTypeRef.current = formData.service_type || '';
     prevVehicleTypeRef.current = formData.vehicle_type || '';
-  }, [formData.service_type, formData.vehicle_type]); // Fixed dependencies to only include the specific fields we're checking
+  }, [formData.customer_id, formData.service_type, formData.vehicle_type]); // Fixed dependencies to only include the specific fields we're checking
   
 
   // Only call pricing API when vehicle type changes, not on service change
-  const [pricingServiceType, setPricingServiceType] = useState<string>(formData.service_type);
+  // const [pricingServiceType, setPricingServiceType] = useState<string>(formData.service_type);
   // Update pricingServiceType only when vehicle_type changes, and only if different
-  useEffect(() => {
-    if (pricingServiceType !== formData.service_type) {
-      setPricingServiceType(formData.service_type);
-    }
-  }, [formData.vehicle_type]);
+  // useEffect(() => {
+  //   if (pricingServiceType !== formData.service_type) {
+  //     setPricingServiceType(formData.service_type);
+  //   }
+  // }, [formData.vehicle_type]);
 
   const { data: customerServicePricing } = useCustomerServicePricing(
     formData.customer_id ?? 0,
-    pricingServiceType,
+    formData.service_type,
     formData.vehicle_type
   );
 
@@ -367,7 +374,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     const vehicleAndDriverSelected = Boolean(
       // Convert to number and check if greater than 0
       Number(data.vehicle_id) > 0 && 
-      Number(data.driver_id) > 0
+      Number(data.driver_id) > 0 &&
+      Number(data.contractor_id) > 0 
     );
 
     if (mandatoryFieldsComplete && vehicleAndDriverSelected) {
@@ -663,7 +671,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       const statusRelevantFields = [
         'customer_id', 'passenger_name', 'service_type', 
         'pickup_date', 'pickup_time', 'pickup_location', 
-        'dropoff_location', 'vehicle_id', 'driver_id'
+        'dropoff_location', 'vehicle_id', 'driver_id','contractor_id'
       ];
       if (statusRelevantFields.includes(field as string)) {
         updated.status = determineJobStatus(updated);
@@ -771,6 +779,16 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   // Always update base price and midnight surcharge when vehicle type or service type changes
   useEffect(() => {
     if (userModifiedPricing) return;
+    // If we're editing an existing job that already has stored prices, don't overwrite them
+    // unless the stored base_price is unset/zero. This preserves the "stored" price when
+    // opening an existing job for edit (prevents showing a different "new" price).
+    if (job && job.id) {
+      // If base_price is non-zero (stored), skip automatic pricing update
+      if (safeNumber(formData.base_price) !== 0 && formData.base_price !== undefined) {
+        return;
+      }
+    }
+
     if (formData.customer_id && formData.service_type && formData.vehicle_type) {
       if (customerServicePricing) {
         const calculatedMidnightSurchargeValue = calculateMidnightSurcharge(customerServicePricing, formData.pickup_time);
@@ -847,7 +865,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     if (!formData.pickup_time) newErrors.pickup_time = "Pickup time is required";
     if (!formData.pickup_location?.trim()) newErrors.pickup_location = "Pickup location is required";
     if (!formData.dropoff_location?.trim()) newErrors.dropoff_location = "Drop-off location is required";
-
+    if (!formData.contractor_id) newErrors.contractor_id = "Assigned To (Contractor) is required"; 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -1599,6 +1617,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                         handleInputChange("contractor_id", v ? Number(v) : undefined);
                       }
                     }}
+                    required  
+                    error={errors.contractor_id}  
                     options={[
                       { value: "", label: "Select Contractor" },
                       ...allContractors
@@ -1920,7 +1940,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                   {/* Job Cost (Contractor's Claim) - Read-only */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
-                      Contractor/Driver's Claim
+                      Contractor/Driver&apos;s Claim
                     </label>
                     <input
                       type="number"
@@ -1959,33 +1979,31 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                     </p>
                   </div>
                   
-                  {/* Show difference if applicable */}
-                  {safeNumber(formData.cash_to_collect) > 0 && safeNumber(formData.job_cost) > 0 && (
-                    <div className="bg-purple-900/30 border border-purple-600/40 rounded-lg p-3">
-                      <div className="text-xs text-purple-200 space-y-1">
-                        <div className="flex justify-between">
-                          <span>Contractor Claim:</span>
-                          <span>S$ {safeNumber(formData.job_cost).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Cash to Collect:</span>
-                          <span>S$ {safeNumber(formData.cash_to_collect).toFixed(2)}</span>
-                        </div>
-                        <div className="border-t border-purple-600 pt-1 mt-1">
-                          <div className="flex justify-between font-medium">
-                            <span>Net to Company:</span>
-                            <span className={
-                              (safeNumber(formData.cash_to_collect) - safeNumber(formData.job_cost)) >= 0 
-                                ? 'text-green-400' 
-                                : 'text-red-400'
-                            }>
-                              S$ {(safeNumber(formData.cash_to_collect) - safeNumber(formData.job_cost)).toFixed(2)}
-                            </span>
-                          </div>
+                  {/* Show difference box (always visible) */}
+                  <div className="bg-purple-900/30 border border-purple-600/40 rounded-lg p-3">
+                    <div className="text-xs text-purple-200 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Contractor Claim:</span>
+                        <span>S$ {safeNumber(formData.job_cost).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Cash to Collect:</span>
+                        <span>S$ {safeNumber(formData.cash_to_collect).toFixed(2)}</span>
+                      </div>
+                      <div className="border-t border-purple-600 pt-1 mt-1">
+                        <div className="flex justify-between font-medium">
+                          <span>Net to Company:</span>
+                          <span className={
+                            (safeNumber(formData.cash_to_collect) - safeNumber(formData.job_cost)) >= 0 
+                              ? 'text-green-400' 
+                              : 'text-red-400'
+                          }>
+                            S$ {(safeNumber(formData.cash_to_collect) - safeNumber(formData.job_cost)).toFixed(2)}
+                          </span>
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>

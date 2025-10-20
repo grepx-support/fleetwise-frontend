@@ -9,12 +9,14 @@ export function useCustomerServicePricing(
   return useQuery({
     queryKey: ['customerServicePricing', customerId, serviceName, vehicleType],
     queryFn: () => {
-      if (!customerId || !serviceName) {
+      // Only call API if ALL three fields are present
+      if (!customerId || !serviceName || !vehicleType) {
         return Promise.resolve(null);
       }
       return getCustomerServicePricing(customerId, serviceName, vehicleType);
     },
-    enabled: !!customerId && !!serviceName,
+    // Enable query ONLY when all three fields are provided
+    enabled: !!customerId && !!serviceName && !!vehicleType,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: false, // Don't retry if pricing doesn't exist
   });
