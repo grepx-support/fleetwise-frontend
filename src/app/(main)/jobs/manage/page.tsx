@@ -199,7 +199,6 @@ const ManageJobsPage = () => {
         driver_contact: '',
 
         // Reset sub-customer fields to prevent "Facilities" from appearing
-        sub_customer_id: undefined,
         sub_customer_name: '',
       };
       

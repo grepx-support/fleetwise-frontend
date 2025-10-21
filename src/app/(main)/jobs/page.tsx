@@ -270,7 +270,6 @@ const JobsPage = () => {
         driver_contact: '',
 
         // Reset sub-customer fields
-        sub_customer_id: undefined,
         sub_customer_name: '',
       };
       

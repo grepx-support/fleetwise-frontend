@@ -127,7 +127,6 @@ const defaultJobValues: JobFormData = {
   extra_services: [],
   
   // Additional Fields
-  sub_customer_id: undefined,
   sub_customer_name: '',
   message: '',
   remarks: '',
@@ -276,6 +275,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       setFormData(prev => ({
         ...prev,
         customer_id: job.customer_id || prev.customer_id,
+        sub_customer_name: job.sub_customer_name || prev.sub_customer_name,
         service_type: job.service_type || prev.service_type,
         vehicle_type: vehicleTypeName,
       }));
@@ -514,8 +514,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         extra_services: job.extra_services || [],
 
         // Additional Fields
-        sub_customer_id: job.sub_customer_id,
-        sub_customer_name: '',
+        sub_customer_name: job.sub_customer_name || '',
         message: '',
         remarks: job.customer_remark || '', // Map customer_remark to remarks
         has_additional_stop: false,
@@ -2014,7 +2013,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                 </h2>
                 
                 <div className="space-y-4">
-                  {/* Job Cost (Contractor's Claim) - Read-only */}
+                  {/* Job Cost (Contractor's Claim) - Editable */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
                       Contractor/Driver&apos;s Claim
@@ -2022,11 +2021,13 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                     <input
                       type="number"
                       value={safeNumber(formData.job_cost) || ''}
-                      readOnly
+                      onChange={(e) => {
+                        handleInputChange('job_cost', e.target.value);
+                      }}
                       step="0.01"
                       min={0}
                       placeholder="0.00"
-                      className="w-full px-4 py-3 bg-gray-600 border border-gray-600 rounded-lg text-white placeholder-gray-400 cursor-not-allowed"
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     {formData.contractor_id && contractorPricing && contractorPricing.length > 0 && (
                       <p className="text-xs text-blue-300">
