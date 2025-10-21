@@ -402,7 +402,6 @@ const BillPage = () => {
       additional_charges: 0,
       final_price: undefined, // Remove this line
       invoice_number: "",
-      sub_customer_id: undefined,
       sub_customer_name: "",
       locations: [],
       extra_services: [],
