@@ -589,8 +589,9 @@ const ContractorBillingPage = () => {
       return;
     }
     
-    // Allow deletion of bills with 'Generated' status
-    if (bill.status !== 'Generated') {
+    // Allow deletion of bills with 'Generated' status (displayed as 'Unpaid')
+    // Also allow deletion of bills with 'Unpaid' status
+    if (bill.status !== 'Generated' && bill.status !== 'Unpaid') {
       toast.error(`Cannot delete bill with status: ${bill.status}`);
       return;
     }
@@ -1088,7 +1089,7 @@ const ContractorBillingPage = () => {
                               <th className="px-3 py-2 text-left">Pickup</th>
                               <th className="px-3 py-2 text-left">Drop-off</th>
                               <th className="px-3 py-2 text-left">Pickup Date</th>
-                              <th className="px-3 py-2 text-left">Amount</th>
+                              <th className="px-3 py-2 text-left">Net Amount</th>
                               <th className="px-3 py-2 text-left">Actions</th>
                             </tr>
                           </thead>
@@ -1101,7 +1102,7 @@ const ContractorBillingPage = () => {
                                 <td className="px-3 py-2">
                                   {job.pickup_date ? new Date(job.pickup_date).toISOString().slice(0, 10) : '-'}
                                 </td>
-                                <td className="px-3 py-2">{formatCurrency(Math.abs(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0)))}</td>
+                                <td className="px-3 py-2">{formatCurrency(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0))}</td>
                                 <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveJobFromBill(bill.id, job.id)}

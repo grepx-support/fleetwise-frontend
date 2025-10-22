@@ -124,7 +124,6 @@ const DriverBillingPage = () => {
   const [tableFilters, setTableFilters] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [billsRefreshKey, setBillsRefreshKey] = useState(0);
   const [activeView, setActiveView] = useState<"jobs" | "bills">("jobs"); // New state to track active view
   
   // State for confirmation modal
@@ -143,19 +142,14 @@ const DriverBillingPage = () => {
     console.log("DriverBillingPage: Component mounted, invalidating and refetching queries");
     const refreshData = async () => {
       // Force immediate refresh of all data
-      setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-      
       // Invalidate all relevant queries to ensure fresh data
-      await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+      queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
       
-      // Additional invalidation to ensure KPI cards update
-      setTimeout(async () => {
-        await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-      }, 100);
+      // Refetch the queries
+      refetchDriverJobs();
+      refetchBills();
     };
     
     refreshData();
@@ -167,19 +161,14 @@ const DriverBillingPage = () => {
       console.log("DriverBillingPage: Window focused, invalidating and refetching queries");
       const refreshData = async () => {
         // Force immediate refresh of all data
-        setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-        
         // Invalidate all relevant queries to ensure fresh data
-        await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+        queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+        queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+        queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
         
-        // Additional invalidation to ensure KPI cards update
-        setTimeout(async () => {
-          await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-        }, 100);
+        // Refetch the queries
+        refetchDriverJobs();
+        refetchBills();
       };
       
       refreshData();
@@ -221,7 +210,7 @@ const DriverBillingPage = () => {
 
   // Fetch generated bills
   const { data: generatedBillsResponse, isLoading: isBillsLoading, refetch: refetchBills } = useQuery({
-    queryKey: ["generatedBills", billsRefreshKey],
+    queryKey: ["generatedBills"],
     queryFn: async () => {
       // For driver billing, fetch driver bills
       const response = await billsApi.getDriverBills();
@@ -366,19 +355,14 @@ const DriverBillingPage = () => {
   useEffect(() => {
     const refreshData = async () => {
       // Force immediate refresh of all data
-      setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-      
       // Invalidate all relevant queries to ensure chips show current counts
-      await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+      queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
       
-      // Additional invalidation to ensure KPI cards update
-      setTimeout(async () => {
-        await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-      }, 100);
+      // Refetch the queries
+      refetchDriverJobs();
+      refetchBills();
     };
     
     refreshData();
@@ -569,26 +553,14 @@ const DriverBillingPage = () => {
       setSelectedJobs([]);
       setExpandedJobId(null);
       
-      // Force immediate refresh of all data
-      setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-      
       // Invalidate all relevant queries to ensure KPI cards update
-      await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-      await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+      queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+      queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
       
-      // Additional invalidation to ensure KPI cards update
-      setTimeout(async () => {
-        await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-      }, 100);
-      
-      setTimeout(async () => {
-        await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-        await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-      }, 500);
+      // Refetch the queries
+      refetchDriverJobs();
+      refetchBills();
     } catch (error: any) {
       console.error("Error generating bill:", error);
       toast.error(error?.response?.data?.error || "Failed to generate bill");
@@ -608,19 +580,11 @@ const DriverBillingPage = () => {
           toast.success("Bill marked as paid successfully");
           
           // Force immediate refresh of all data
-          setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-          
           // Invalidate all relevant queries to ensure KPI cards update
-          await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
           
-          // Additional invalidation to ensure KPI cards update
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 100);
-          
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 500);
+          // Refetch the queries
+          refetchBills();
         } catch (error: any) {
           console.error("Error marking bill as paid:", error);
           toast.error(error?.response?.data?.error || "Failed to mark bill as paid");
@@ -641,26 +605,14 @@ const DriverBillingPage = () => {
           await billsApi.removeJobFromBill(billId, jobId);
           toast.success("Job removed from bill successfully");
           
-          // Force immediate refresh of all data
-          setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-          
           // Invalidate all relevant queries to ensure KPI cards update
-          await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+          queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+          queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
           
-          // Additional invalidation to ensure KPI cards update
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 100);
-          
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 500);
+          // Refetch the queries
+          refetchDriverJobs();
+          refetchBills();
         } catch (error: any) {
           console.error("Error removing job from bill:", error);
           toast.error(error?.response?.data?.error || "Failed to remove job from bill");
@@ -678,8 +630,9 @@ const DriverBillingPage = () => {
       return;
     }
     
-    // Allow deletion of bills with 'Generated' status
-    if (bill.status !== 'Generated') {
+    // Allow deletion of bills with 'Generated' status (displayed as 'Unpaid')
+    // Also allow deletion of bills with 'Unpaid' status
+    if (bill.status !== 'Generated' && bill.status !== 'Unpaid') {
       toast.error(`Cannot delete bill with status: ${bill.status}`);
       return;
     }
@@ -693,26 +646,14 @@ const DriverBillingPage = () => {
           await axios.delete(`/api/bills/${bill.id}`);
           toast.success("Bill deleted successfully. Jobs moved back to 'Jobs not in Bill' list.");
           
-          // Force immediate refresh of all data
-          setBillsRefreshKey(prev => prev + 1); // Force refresh bills
-          
           // Invalidate all relevant queries to ensure KPI cards update
-          await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-          await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
+          queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
+          queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
           
-          // Additional invalidation to ensure KPI cards update
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 100);
-          
-          setTimeout(async () => {
-            await queryClient.invalidateQueries({ queryKey: ["driverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["allDriverBillableJobs"] });
-            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
-          }, 500);
+          // Refetch the queries
+          refetchDriverJobs();
+          refetchBills();
         } catch (error: any) {
           console.error("Error deleting bill:", error);
           toast.error(error?.response?.data?.error || "Failed to delete bill");
@@ -1189,7 +1130,7 @@ const DriverBillingPage = () => {
                               <th className="px-3 py-2 text-left">Pickup</th>
                               <th className="px-3 py-2 text-left">Drop-off</th>
                               <th className="px-3 py-2 text-left">Pickup Date</th>
-                              <th className="px-3 py-2 text-left">Amount</th>
+                              <th className="px-3 py-2 text-left">Net Amount</th>
                               <th className="px-3 py-2 text-left">Actions</th>
                             </tr>
                           </thead>
@@ -1202,7 +1143,7 @@ const DriverBillingPage = () => {
                                 <td className="px-3 py-2">
                                   {job.pickup_date ? new Date(job.pickup_date).toISOString().slice(0, 10) : '-'}
                                 </td>
-                                <td className="px-3 py-2">{formatCurrency(Math.abs(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0)))}</td>
+                                <td className="px-3 py-2">{formatCurrency(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0))}</td>
                                 <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveJobFromBill(bill.id, job.id)}
