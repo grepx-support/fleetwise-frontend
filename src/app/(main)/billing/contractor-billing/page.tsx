@@ -11,7 +11,7 @@ import { JobEntityTable } from "@/components/organisms/JobBillingTable";
 import { EntityTableColumn } from "@/components/organisms/JobBillingTable";
 import { useGetAllContractors } from "@/hooks/useContractors";
 import toast from "react-hot-toast";
-import { ArrowUp, ArrowDown, Eye, Trash2 } from "lucide-react";
+import { ArrowUp, ArrowDown, Eye, Trash2, DollarSign } from "lucide-react";
 import JobDetailCard from "@/components/organisms/JobDetailCard";
 import * as billsApi from "@/services/api/billingApi";
 
@@ -98,6 +98,12 @@ const generatedBillsColumns: EntityTableColumn<any>[] = [
     accessor: "type",
     filterable: true,
     stringLabel: "Type",
+  },
+  {
+    label: "Status",
+    accessor: "status",
+    filterable: true,
+    stringLabel: "Status",
   },
   {
     label: "Actions",
@@ -549,19 +555,46 @@ const ContractorBillingPage = () => {
     setIsConfirmModalOpen(true);
   };
 
+  // Mark bill as paid handler
+  const handleMarkAsPaid = async (bill: any) => {
+    // Open confirmation modal instead of using window.confirm
+    setConfirmModalData({
+      title: "Mark Bill as Paid",
+      message: `Are you sure you want to mark this bill as paid?`,
+      onConfirm: async () => {
+        try {
+          // Update bill status to 'Paid'
+          await billsApi.updateBillStatus({ id: bill.id, status: 'Paid' });
+          toast.success("Bill marked as paid successfully");
+          
+          // Refresh data - invalidate all relevant queries to ensure KPI cards update
+          queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          
+          // Also refetch the queries
+          refetchBills();
+        } catch (error: any) {
+          console.error("Error marking bill as paid:", error);
+          toast.error(error?.response?.data?.error || "Failed to mark bill as paid");
+        }
+      }
+    });
+    setIsConfirmModalOpen(true);
+  };
+
   // Delete bill handler
   const handleDeleteBill = async (bill: any) => {
-    // Allow deletion of bills with 'Generated' status
-    // Also allow deletion of contractor bills (which have contractor_id) regardless of status
-    if (bill.status !== 'Generated') {
-      // If it's a contractor bill (has contractor_id), allow deletion regardless of status
-      if (bill.contractor_id !== null) {
-        // Allow deletion for contractor bills regardless of status
-      } else {
-        toast.error(`Cannot delete bill with status: ${bill.status}`);
-        return;
-      }
+    // Prevent deletion of bills with 'Paid' status
+    if (bill.status === 'Paid') {
+      toast.error("Cannot delete bill with status: Paid");
+      return;
     }
+    
+    // Allow deletion of bills with 'Generated' status
+    if (bill.status !== 'Generated') {
+      toast.error(`Cannot delete bill with status: ${bill.status}`);
+      return;
+    }
+    
     // Open confirmation modal instead of using window.confirm
     setConfirmModalData({
       title: "Delete Bill",
@@ -996,6 +1029,19 @@ const ContractorBillingPage = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (row.status !== 'Paid') {
+                            handleMarkAsPaid(row);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md border text-xs ${row.status === 'Paid' ? 'border-green-500/50 bg-green-500/20 text-green-400 cursor-not-allowed' : 'border-border-color hover:bg-green-500/50 text-green-500'}`}
+                        title={row.status === 'Paid' ? 'Already Paid' : 'Mark as Paid'}
+                        disabled={row.status === 'Paid'}
+                      >
+                        <DollarSign className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           // TODO: Implement view bill functionality
                           toast("View bill functionality to be implemented");
                         }}
@@ -1021,6 +1067,10 @@ const ContractorBillingPage = () => {
                     <span>{formatCurrency(row.total_amount)}</span>
                   ) : col.accessor === "type" ? (row: any) => (
                     <span>{row.type}</span>
+                  ) : col.accessor === "status" ? (row: any) => (
+                    <span className={`px-2 py-1 rounded text-xs ${row.status === 'Paid' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                      {row.status || 'Unpaid'}
+                    </span>
                   ) : undefined,
                 }))}
                 data={paginatedBills}
@@ -1050,7 +1100,7 @@ const ContractorBillingPage = () => {
                                 <td className="px-3 py-2">
                                   {job.pickup_date ? new Date(job.pickup_date).toISOString().slice(0, 10) : '-'}
                                 </td>
-                                <td className="px-3 py-2">{formatCurrency(Number(job.driver_commission || 0) - Number(job.cash_to_collect || 0))}</td>
+                                <td className="px-3 py-2">{formatCurrency(Math.abs(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0)))}</td>
                                 <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveJobFromBill(bill.id, job.id)}

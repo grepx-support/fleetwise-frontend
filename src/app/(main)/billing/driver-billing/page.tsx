@@ -11,7 +11,7 @@ import { JobEntityTable } from "@/components/organisms/JobBillingTable";
 import { EntityTableColumn } from "@/components/organisms/JobBillingTable";
 import { useGetAllDrivers } from "@/hooks/useDrivers";
 import toast from "react-hot-toast";
-import { ArrowUp, ArrowDown, Eye, Trash2 } from "lucide-react";
+import { ArrowUp, ArrowDown, Eye, Trash2, DollarSign } from "lucide-react";
 import JobDetailCard from "@/components/organisms/JobDetailCard";
 import * as billsApi from "@/services/api/billingApi";
 
@@ -98,6 +98,12 @@ const generatedBillsColumns: EntityTableColumn<any>[] = [
     accessor: "type",
     filterable: true,
     stringLabel: "Type",
+  },
+  {
+    label: "Status",
+    accessor: "status",
+    filterable: true,
+    stringLabel: "Status",
   },
   {
     label: "Actions",
@@ -589,6 +595,41 @@ const DriverBillingPage = () => {
     }
   };
 
+  // Mark bill as paid handler
+  const handleMarkAsPaid = async (bill: any) => {
+    // Open confirmation modal instead of using window.confirm
+    setConfirmModalData({
+      title: "Mark Bill as Paid",
+      message: `Are you sure you want to mark this bill as paid?`,
+      onConfirm: async () => {
+        try {
+          // Update bill status to 'Paid'
+          await billsApi.updateBillStatus({ id: bill.id, status: 'Paid' });
+          toast.success("Bill marked as paid successfully");
+          
+          // Force immediate refresh of all data
+          setBillsRefreshKey(prev => prev + 1); // Force refresh bills
+          
+          // Invalidate all relevant queries to ensure KPI cards update
+          await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          
+          // Additional invalidation to ensure KPI cards update
+          setTimeout(async () => {
+            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          }, 100);
+          
+          setTimeout(async () => {
+            await queryClient.invalidateQueries({ queryKey: ["generatedBills"] });
+          }, 500);
+        } catch (error: any) {
+          console.error("Error marking bill as paid:", error);
+          toast.error(error?.response?.data?.error || "Failed to mark bill as paid");
+        }
+      }
+    });
+    setIsConfirmModalOpen(true);
+  };
+
   // Remove job from bill handler
   const handleRemoveJobFromBill = async (billId: number, jobId: number) => {
     // Open confirmation modal instead of using window.confirm
@@ -631,18 +672,18 @@ const DriverBillingPage = () => {
 
   // Delete bill handler
   const handleDeleteBill = async (bill: any) => {
-    // Allow deletion of bills with 'Generated' status
-    // Also allow deletion of driver bills (which have driver_id) regardless of status
-    if (bill.status !== 'Generated') {
-      // If it's a driver bill (has driver_id), allow deletion regardless of status
-      // For driver bills, check if it's a driver bill by checking if contractor_id is null
-      if (bill.contractor_id === null) {
-        // Allow deletion for driver bills regardless of status
-      } else {
-        toast.error(`Cannot delete bill with status: ${bill.status}`);
-        return;
-      }
+    // Prevent deletion of bills with 'Paid' status
+    if (bill.status === 'Paid') {
+      toast.error("Cannot delete bill with status: Paid");
+      return;
     }
+    
+    // Allow deletion of bills with 'Generated' status
+    if (bill.status !== 'Generated') {
+      toast.error(`Cannot delete bill with status: ${bill.status}`);
+      return;
+    }
+    
     // Open confirmation modal instead of using window.confirm
     setConfirmModalData({
       title: "Delete Bill",
@@ -1089,6 +1130,19 @@ const DriverBillingPage = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (row.status !== 'Paid') {
+                            handleMarkAsPaid(row);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md border text-xs ${row.status === 'Paid' ? 'border-green-500/50 bg-green-500/20 text-green-400 cursor-not-allowed' : 'border-border-color hover:bg-green-500/50 text-green-500'}`}
+                        title={row.status === 'Paid' ? 'Already Paid' : 'Mark as Paid'}
+                        disabled={row.status === 'Paid'}
+                      >
+                        <DollarSign className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           // TODO: Implement view bill functionality
                           toast("View bill functionality to be implemented");
                         }}
@@ -1114,6 +1168,10 @@ const DriverBillingPage = () => {
                     <span>{formatCurrency(row.total_amount)}</span>
                   ) : col.accessor === "type" ? (row: any) => (
                     <span>{row.type}</span>
+                  ) : col.accessor === "status" ? (row: any) => (
+                    <span className={`px-2 py-1 rounded text-xs ${row.status === 'Paid' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                      {row.status || 'Unpaid'}
+                    </span>
                   ) : undefined,
                 }))}
                 data={paginatedBills}
@@ -1143,7 +1201,7 @@ const DriverBillingPage = () => {
                                 <td className="px-3 py-2">
                                   {job.pickup_date ? new Date(job.pickup_date).toISOString().slice(0, 10) : '-'}
                                 </td>
-                                <td className="px-3 py-2">{formatCurrency(Number(job.driver_commission || 0) - Number(job.cash_to_collect || 0))}</td>
+                                <td className="px-3 py-2">{formatCurrency(Math.abs(Number(job.job_cost || 0) - Number(job.cash_to_collect || 0)))}</td>
                                 <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveJobFromBill(bill.id, job.id)}
