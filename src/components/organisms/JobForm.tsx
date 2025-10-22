@@ -275,7 +275,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       setFormData(prev => ({
         ...prev,
         customer_id: job.customer_id || prev.customer_id,
-        sub_customer_name: job.sub_customer_name || prev.sub_customer_name,
+        sub_customer_name: (job as any).sub_customer_name || prev.sub_customer_name,
         service_type: job.service_type || prev.service_type,
         vehicle_type: vehicleTypeName,
       }));
@@ -514,7 +514,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         extra_services: job.extra_services || [],
 
         // Additional Fields
-        sub_customer_name: job.sub_customer_name || '',
+        sub_customer_name: (job as any).sub_customer_name || '',
         message: '',
         remarks: job.customer_remark || '', // Map customer_remark to remarks
         has_additional_stop: false,
@@ -1338,7 +1338,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                   />
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
-                      Sub Customer
+                      Department / Person In Charge
                     </label>
                     <input
                       type="text"
@@ -1351,7 +1351,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                       }}
                       readOnly={fieldsLocked}
                       className={`w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${fieldsLocked ? 'bg-gray-600 cursor-not-allowed' : ''}`}
-                      placeholder="Enter sub-customer name"
+                      placeholder="Enter department / person in charge"
                     />
                   </div>
                   <div className="space-y-2">
