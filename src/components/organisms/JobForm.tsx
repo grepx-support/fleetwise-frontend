@@ -525,6 +525,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         midnight_surcharge: job.midnight_surcharge !== undefined ? job.midnight_surcharge : 0,
         contractor_id: job.contractor_id, // This field now exists
         cash_to_collect: job.cash_to_collect !== undefined ? job.cash_to_collect : 0, // Add cash_to_collect field
+        booking_ref: job.booking_ref || '',
       };
 
       // Only update if the job data has actually changed
@@ -1336,9 +1337,25 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                     className={fieldsLocked ? "opacity-75" : ""}
                     disabled={fieldsLocked}
                   />
+		  {/* Customer Reference ID */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
-                      Sub Customer
+                      Customer Reference No.
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.booking_ref || ""}
+                      onChange={(e) => {
+                        handleInputChange("booking_ref", e.target.value);
+                      }}
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                      placeholder="Enter customer reference ID"
+                    />
+                  </div>
+		  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">
+                      Department / Person In Charge / Sub-Customer
                     </label>
                     <input
                       type="text"
@@ -1351,9 +1368,11 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                       }}
                       readOnly={fieldsLocked}
                       className={`w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${fieldsLocked ? 'bg-gray-600 cursor-not-allowed' : ''}`}
-                      placeholder="Enter sub-customer name"
+                      placeholder="Enter department / person in charge"
                     />
                   </div>
+		  <div className="space-y-2">
+		  </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
                       Passenger Name <span className="text-red-400">*</span>
@@ -1395,7 +1414,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                     />
                   </div>
                   
-                  {/* Service Field - Below Passenger Mobile */}
+                  {/* Service Field */}
                   <SelectField 
                     label="Service" 
                     value={formData.service_type || ''} 

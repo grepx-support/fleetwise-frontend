@@ -82,7 +82,10 @@ export interface Job {
 
   // Customer remark field
   customer_remark?: string;
-
+  
+  // Booking reference field
+  booking_ref?: string;
+  
   // Sub customer name field
   sub_customer_name?: string;
 }
@@ -173,6 +176,9 @@ export type JobFormData = {
   
   // Customer remark field
   customer_remark?: string;
+  
+  // Booking reference field
+  booking_ref?: string;
 };
 
 // Define the schema first
@@ -276,6 +282,9 @@ export const jobSchema = z.object({
   
   // Contractor field
   contractor_id: z.number().optional(),
+  
+  // Booking reference field
+  booking_ref: z.string().optional(),
 });
 
 export const defaultJobValues: JobFormData = {
@@ -371,7 +380,10 @@ export const defaultJobValues: JobFormData = {
   contractor_id: undefined,
   
   // Customer remark field
-  customer_remark: undefined
+  customer_remark: undefined,
+  
+  // Booking reference field
+  booking_ref: undefined
 };
 
 // Make sure to import this in your JobForm.tsx

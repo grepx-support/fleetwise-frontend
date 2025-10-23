@@ -183,6 +183,11 @@ export async function updateInvoiceStatus(data : { id: number | null; status: st
   return response.data;
 }
 
+export async function updateBillStatus(data : { id: number | null; status: string }): Promise<any> {
+  const response = await api.put<any>(`/api/bills/${data.id}`, { status: data.status });
+  return response.data;
+}
+
 export async function removeJob(id: number | null): Promise<void> {
   await api.delete(`/api/jobs/remove/${id}`);
 }
