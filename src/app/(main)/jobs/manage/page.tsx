@@ -334,7 +334,7 @@ const ManageJobsPage = () => {
     // Exclude jobs with jc (completed) or sd (stand-down) status
     job.status !== 'jc' && job.status !== 'sd' &&
     Object.entries(debouncedFilters).every(([col, val]) =>
-      !val || (job[col]?.toString().toLowerCase().includes(val.toLowerCase()))
+      !val || (job[col] !== undefined && job[col] !== null && job[col].toString().toLowerCase().includes(val.toLowerCase()))
     ) &&
     (!search || job.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
       job.id?.toString().toLowerCase().includes(search.toLowerCase()))
