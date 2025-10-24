@@ -11,6 +11,7 @@ import { Job,JobFormData } from '@/types/job';
 import { EntityTable, EntityTableColumn, EntityTableAction } from '@/components/organisms/EntityTable';
 import { createStandardEntityActions } from '@/components/common/StandardActions';
 import { EntityHeader } from '@/components/organisms/EntityHeader';
+import { CreateJobFromTextModal } from '@/components/organisms/CreateJobFromTextModal';
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { AnimatedButton } from "@/components/ui/AnimatedButton";
 
@@ -150,6 +151,8 @@ const JobsPage = () => {
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [openCreateFromTextModal, setOpenCreateFromTextModal] = useState(false);
+  const [isCreatingFromText, setIsCreatingFromText] = useState(false);
   const [sortBy, setSortBy] = useState<string>('pickup_date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -299,6 +302,21 @@ const JobsPage = () => {
     }
   };
 
+  const handleCreateJobFromText = async (text: string) => {
+    setIsCreatingFromText(true);
+    try {
+      const job = await jobsApi.createJobFromText(text);
+      setOpenCreateFromTextModal(false);
+      setIsCreatingFromText(false);
+      toast.success('Job created successfully from text!');
+      // Refresh the jobs list
+      window.location.reload();
+    } catch (error: any) {
+      setIsCreatingFromText(false);
+      toast.error(error?.message || 'Failed to create job from text');
+    }
+  };
+
   const confirmDelete = async () => {
     if (pendingDeleteId == null) return;
     setDeletingId(pendingDeleteId);
@@ -361,9 +379,20 @@ const JobsPage = () => {
               <Upload className="mr-2 h-4 w-4" />
               Bulk Upload
             </AnimatedButton>
+            <AnimatedButton onClick={() => setOpenCreateFromTextModal(true)} variant="outline" className="flex items-center">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Create from Text
+            </AnimatedButton>
           </>
         }
         className="mb-4"
+      />
+      
+      <CreateJobFromTextModal
+        isOpen={openCreateFromTextModal}
+        onClose={() => setOpenCreateFromTextModal(false)}
+        onSubmit={handleCreateJobFromText}
+        isLoading={isCreatingFromText}
       />
       <div className="flex flex-col md:flex-row md:items-center gap-4 bg-background pt-4 pb-4 rounded-t-xl">
         <div className="flex-1">
