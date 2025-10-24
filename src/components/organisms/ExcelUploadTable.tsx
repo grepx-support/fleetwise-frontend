@@ -22,6 +22,8 @@ import toast from 'react-hot-toast';
 interface ExcelRow {
   row_number: number;
   customer: string;
+  customer_reference_no?: string;
+  department_person_in_charge?: string;
   service: string;
   vehicle: string;
   driver: string;
@@ -30,6 +32,7 @@ interface ExcelRow {
   pickup_location: string;
   dropoff_location: string;
   passenger_name: string;
+  passenger_mobile?: string;
   status: string;
   remarks: string;
   is_valid: boolean;
@@ -756,6 +759,18 @@ function RowItem({
               <span className="font-medium text-text-secondary">Customer:</span>
               <span className="ml-2 text-text-main">{row.customer}</span>
             </div>
+            {row.customer_reference_no && (
+              <div>
+                <span className="font-medium text-text-secondary">Customer Ref No:</span>
+                <span className="ml-2 text-text-main">{row.customer_reference_no}</span>
+              </div>
+            )}
+            {row.department_person_in_charge && (
+              <div>
+                <span className="font-medium text-text-secondary">Department/Person:</span>
+                <span className="ml-2 text-text-main">{row.department_person_in_charge}</span>
+              </div>
+            )}
             <div>
               <span className="font-medium text-text-secondary">Service:</span>
               <span className="ml-2 text-text-main">{row.service}</span>
@@ -788,6 +803,12 @@ function RowItem({
               <span className="font-medium text-text-secondary">Passenger:</span>
               <span className="ml-2 text-text-main">{row.passenger_name}</span>
             </div>
+            {row.passenger_mobile && (
+              <div>
+                <span className="font-medium text-text-secondary">Passenger Mobile:</span>
+                <span className="ml-2 text-text-main">{row.passenger_mobile}</span>
+              </div>
+            )}
             <div className="col-span-2">
               <span className="font-medium text-text-secondary">Pickup:</span>
               <span className="ml-2 text-text-main">{row.pickup_location}</span>
@@ -959,6 +980,34 @@ function EditForm({
                 ))}
               </select>
             )}
+          </div>
+
+          {/* Customer Reference No */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Customer Reference No
+            </label>
+            <input
+              type="text"
+              defaultValue={row.customer_reference_no || ''}
+              onChange={(e) => handleChange('customer_reference_no', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter reference number"
+            />
+          </div>
+
+          {/* Department/Person In Charge */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Department/Person In Charge
+            </label>
+            <input
+              type="text"
+              defaultValue={row.department_person_in_charge || ''}
+              onChange={(e) => handleChange('department_person_in_charge', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter department or person in charge"
+            />
           </div>
 
           {/* Service Dropdown */}
@@ -1205,6 +1254,20 @@ function EditForm({
               defaultValue={row.passenger_name}
               onChange={(e) => handleChange('passenger_name', e.target.value)}
               className={inputClassName}
+            />
+          </div>
+
+          {/* Passenger Mobile */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Passenger Mobile
+            </label>
+            <input
+              type="tel"
+              defaultValue={row.passenger_mobile || ''}
+              onChange={(e) => handleChange('passenger_mobile', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter mobile number"
             />
           </div>
 
