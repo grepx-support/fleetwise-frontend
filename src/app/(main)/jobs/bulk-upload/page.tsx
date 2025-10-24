@@ -26,12 +26,14 @@ interface PreviewData extends Omit<ApiPreviewData, 'rows'> {
 export default function BulkUploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadStep, setUploadStep] = useState<'upload' | 'preview' | 'complete'>('upload');
+  const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
+  const [selectedValidCount, setSelectedValidCount] = useState(0);
 
   // Download template
   const handleDownloadTemplate = async () => {
@@ -133,7 +135,7 @@ export default function BulkUploadPage() {
   const handleUpdateRow = (rowNumber: number, updatedRow: ExcelRow) => {
     if (!previewData) return;
 
-    const updatedRows = previewData.rows.map(row => 
+    const updatedRows = previewData.rows.map(row =>
       row.row_number === rowNumber ? updatedRow : row
     );
 
@@ -151,31 +153,76 @@ export default function BulkUploadPage() {
     toast.success('Row updated successfully');
   };
 
-  // Confirm upload
+  // Handle selection changes from ExcelUploadTable
+  const handleSelectionChange = React.useCallback((rowNumbers: number[], validCount: number) => {
+    setSelectedRowNumbers(rowNumbers);
+    setSelectedValidCount(validCount);
+  }, []);
+
+  // Confirm upload with improved selection handling
   const handleConfirmUpload = async () => {
-    if (!previewData || previewData.valid_count === 0) return;
+    if (!previewData || (selectedValidCount === 0 && previewData.valid_count === 0)) return;
 
     setIsProcessing(true);
     try {
-      // Filter out rejected rows before sending to API
+      let rowsToUpload;
+      
+      if (selectedRowNumbers.length > 0) {
+        // User selected specific rows - upload ONLY selected valid rows
+        rowsToUpload = previewData.rows.filter(row => 
+          selectedRowNumbers.includes(row.row_number) && 
+          row.is_valid && 
+          !row.is_rejected
+        );
+      } else {
+        // No selection - upload ALL valid rows (default behavior)
+        rowsToUpload = previewData.rows.filter(row => 
+          row.is_valid && 
+          !row.is_rejected
+        );
+      }
+
       const filteredData = {
         ...previewData,
-        rows: previewData.rows.filter(row => !row.is_rejected)
+        rows: rowsToUpload
       };
-      
+
       const result = await uploadDownloadApi.confirmUpload(filteredData);
-      setUploadStep('complete');
-      toast.success(result.message);
-      
-      // Reset after successful upload
-      setTimeout(() => {
-        setFile(null);
-        setPreviewData(null);
-        setUploadStep('upload');
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+
+      // Handle different response scenarios
+      if (result.processed_count > 0) {
+        // Some jobs were processed successfully
+        if (result.skipped_count > 0) {
+          // Some were processed, some were skipped
+          toast.success(`${result.processed_count} job(s) created successfully. ${result.skipped_count} duplicate(s) skipped.`);
+        } else {
+          // All were processed
+          toast.success(`${result.processed_count} job(s) created successfully!`);
         }
-      }, 3000);
+        setUploadStep('complete');
+
+        // Reset after successful upload
+        setTimeout(() => {
+          setFile(null);
+          setPreviewData(null);
+          setUploadStep('upload');
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }, 3000);
+      } else if (result.skipped_count > 0) {
+        // No jobs processed, all were skipped
+        const skipReasons = result.skipped_rows
+          .map(s => `Row ${s.row_number}: ${s.reason}`)
+          .join('\n');
+        toast.error(`No jobs created. All ${result.skipped_count} row(s) were skipped:\n${skipReasons}`);
+      } else if (result.errors && result.errors.length > 0) {
+        // Errors occurred
+        toast.error(`Upload failed: ${result.errors.join(', ')}`);
+      } else {
+        // Unknown error
+        toast.error('No jobs were created. Please try again.');
+      }
     } catch (error) {
       console.error('Confirmation error:', error);
       toast.error(error instanceof Error ? error.message : 'Upload confirmation failed');
@@ -330,48 +377,6 @@ export default function BulkUploadPage() {
         {/* Preview Step */}
         {uploadStep === 'preview' && previewData && (
           <div className="space-y-6">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg shadow-lg border" style={{ 
-                backgroundColor: 'var(--color-bg-light)', 
-                borderColor: 'var(--color-border)' 
-              }}>
-                <div className="flex items-center">
-                  <CheckCircleIcon className="w-8 h-8 text-green-500" />
-                  <div className="ml-3">
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Valid Rows</p>
-                    <p className="text-2xl font-bold text-green-600">{previewData.valid_count}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="p-4 rounded-lg shadow-lg border" style={{ 
-                backgroundColor: 'var(--color-bg-light)', 
-                borderColor: 'var(--color-border)' 
-              }}>
-                <div className="flex items-center">
-                  <XCircleIcon className="w-8 h-8 text-red-500" />
-                  <div className="ml-3">
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Errors</p>
-                    <p className="text-2xl font-bold text-red-600">{previewData.error_count}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="p-4 rounded-lg shadow-lg border" style={{ 
-                backgroundColor: 'var(--color-bg-light)', 
-                borderColor: 'var(--color-border)' 
-              }}>
-                <div className="flex items-center">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--color-border)' }}>
-                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>T</span>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Total Rows</p>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--color-text-main)' }}>{previewData.rows.length}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Excel Upload Table */}
             <ExcelUploadTable
               data={previewData.rows}
@@ -381,6 +386,7 @@ export default function BulkUploadPage() {
               onRevalidate={handleRevalidate}
               onDownloadTemplate={handleDownloadTemplate}
               onUpdateRow={handleUpdateRow}
+              onSelectionChange={handleSelectionChange}
               isLoading={isProcessing}
             />
 
@@ -389,37 +395,64 @@ export default function BulkUploadPage() {
               <button
                 onClick={handleReset}
                 className="px-4 py-2 text-sm font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-                style={{ 
-                  color: 'var(--color-text-main)', 
-                  backgroundColor: 'var(--color-bg-light)', 
-                  borderColor: 'var(--color-border)' 
+                style={{
+                  color: 'var(--color-text-main)',
+                  backgroundColor: 'var(--color-bg-light)',
+                  borderColor: 'var(--color-border)'
                 }}
               >
                 Upload Another File
               </button>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={handleRevalidate}
-                  disabled={isProcessing}
-                  className="px-4 py-2 text-sm font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
-                  style={{ 
-                    color: '#f97316', 
-                    backgroundColor: 'rgba(249, 115, 22, 0.1)', 
-                    borderColor: '#f97316' 
-                  }}
-                >
-                  Revalidate
-                </button>
-                {previewData.valid_count > 0 && (
-                  <button
-                    onClick={handleConfirmUpload}
-                    disabled={isProcessing}
-                    className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
-                    style={{ backgroundColor: '#10b981' }}
-                  >
-                    {isProcessing ? 'Processing...' : `Confirm Upload (${previewData.valid_count})`}
-                  </button>
+              <div className="flex flex-col items-end space-y-2">
+                {/* Persistent upload scope indicator */}
+                {(previewData.valid_count > 0 || selectedValidCount > 0) && (
+                  <div className="text-sm text-right" style={{ color: 'var(--color-text-secondary)' }}>
+                    {selectedRowNumbers.length > 0 ? (
+                      <>
+                        Ready to upload <span className="font-bold" style={{ color: 'var(--color-primary)' }}>{selectedValidCount}</span> selected valid row(s)
+                        {selectedValidCount < selectedRowNumbers.length && (
+                          <span className="text-yellow-600 ml-1">
+                            ({selectedRowNumbers.length - selectedValidCount} selected rows are invalid)
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        Ready to upload <span className="font-bold" style={{ color: 'var(--color-primary)' }}>{previewData.valid_count}</span> valid row(s)
+                      </>
+                    )}
+                  </div>
                 )}
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={handleRevalidate}
+                    disabled={isProcessing}
+                    className="px-4 py-2 text-sm font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
+                    style={{
+                      color: '#f97316',
+                      backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                      borderColor: '#f97316'
+                    }}
+                  >
+                    Revalidate
+                  </button>
+                  {(previewData.valid_count > 0 || selectedValidCount > 0) && (
+                    <button
+                      onClick={handleConfirmUpload}
+                      disabled={isProcessing || (selectedRowNumbers.length > 0 && selectedValidCount === 0)}
+                      className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: (selectedRowNumbers.length > 0 && selectedValidCount === 0)
+                          ? '#9ca3af' // gray for invalid selection
+                          : '#10b981'  // green for valid selection
+                      }}
+                    >
+                      {isProcessing
+                        ? 'Processing...'
+                        : 'Confirm Upload'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -1,12 +1,11 @@
 "use client";
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import clsx from 'clsx';
-import { FixedSizeList as List } from 'react-window';
 import { VariableSizeList as VList } from 'react-window';
 
-import { 
-  CheckCircleIcon, 
-  XCircleIcon, 
+import {
+  CheckCircleIcon,
+  XCircleIcon,
   ExclamationTriangleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -23,6 +22,8 @@ import toast from 'react-hot-toast';
 interface ExcelRow {
   row_number: number;
   customer: string;
+  customer_reference_no?: string;
+  department_person_in_charge?: string;
   service: string;
   vehicle: string;
   driver: string;
@@ -31,11 +32,60 @@ interface ExcelRow {
   pickup_location: string;
   dropoff_location: string;
   passenger_name: string;
+  passenger_mobile?: string;
   status: string;
   remarks: string;
   is_valid: boolean;
   error_message: string;
   is_rejected?: boolean;
+  customer_id?: number;
+  service_type?: string;
+  vehicle_id?: number;
+  driver_id?: number;
+  vehicle_type?: string;
+  contractor?: string;
+  contractor_id?: number;
+}
+
+// Reference data interfaces (adjust based on your API response)
+interface Customer {
+  id: number;
+  name: string;
+}
+
+interface Service {
+  id: number;
+  name: string;
+}
+
+interface Vehicle {
+  id: number;
+  number: string;
+  name?: string;  // Optional vehicle name/model
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+interface Contractor {
+  id: number;
+  name: string;
+}
+
+interface VehicleType {
+  id: number;
+  name: string;
+}
+
+interface ReferenceData {
+  customers: Customer[];
+  services: Service[];
+  vehicles: Vehicle[];
+  drivers: Driver[];
+  contractors: Contractor[];
+  vehicle_types: VehicleType[];
 }
 
 interface ExcelUploadTableProps {
@@ -46,6 +96,7 @@ interface ExcelUploadTableProps {
   onRevalidate: () => void;
   onDownloadTemplate: () => void;
   onUpdateRow?: (rowNumber: number, updatedRow: ExcelRow) => void;
+  onSelectionChange?: (selectedRowNumbers: number[], selectedValidCount: number) => void;
   isLoading?: boolean;
 }
 
@@ -57,1004 +108,1229 @@ export default function ExcelUploadTable({
   onRevalidate,
   onDownloadTemplate,
   onUpdateRow,
+  onSelectionChange,
   isLoading = false
 }: ExcelUploadTableProps) {
-  // Force reset editing state on component mount
-  React.useEffect(() => {
-    setEditingRow(null);
-    setEditingData(null);
-    setExpandedRows(new Set());
-  }, []);
-
+  // State management
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [editingRow, setEditingRow] = useState<number | null>(null);
-  const [editingData, setEditingData] = useState<ExcelRow | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-
-  // Reset editing state when data changes
-  React.useEffect(() => {
-    setEditingRow(null);
-    setEditingData(null);
-    setExpandedRows(new Set());
-    setValidationErrors({});
-  }, [data]);
-
   const [sortConfig, setSortConfig] = useState<{
     key: keyof ExcelRow;
     direction: 'asc' | 'desc';
   } | null>(null);
 
-  // Toggle row expansion
-  const toggleRowExpansion = (rowNumber: number) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(rowNumber)) {
-      newExpanded.delete(rowNumber);
-    } else {
-      newExpanded.add(rowNumber);
+  // Reference data state
+  const [referenceData, setReferenceData] = useState<ReferenceData>({
+    customers: [],
+    services: [],
+    vehicles: [],
+    drivers: [],
+    contractors: [],
+    vehicle_types: []
+  });
+  const [isLoadingReferenceData, setIsLoadingReferenceData] = useState(false);
+
+  const listRef = useRef<any>(null);
+  const rowHeightMapRef = useRef<Record<number, number>>({});  // Store row heights
+
+  // Store editing data in a ref to avoid re-renders
+  const editingDataRef = useRef<Record<number, ExcelRow>>({});
+
+  // CRITICAL FIX: Add state to trigger list recomputation when edit mode changes
+  const [rowUpdateTrigger, setRowUpdateTrigger] = useState(0);
+
+  // Force reset editing state on component mount
+  useEffect(() => {
+    setEditingRow(null);
+    editingDataRef.current = {};
+    setExpandedRows(new Set());
+  }, []);
+
+  // Reset editing state when data changes
+  useEffect(() => {
+    setEditingRow(null);
+    editingDataRef.current = {};
+    setExpandedRows(new Set());
+  }, [data]);
+
+  // When editing state changes, update the row heights and force a recalculation
+  useEffect(() => {
+    if (editingRow !== null) {
+      // Add a significant height for editing mode (adjust based on your form)
+      rowHeightMapRef.current[editingRow] = 900; // Increased height for full form visibility
+
+      // Force recalculation
+      if (listRef.current) {
+        listRef.current.resetAfterIndex(0);
+      }
+
+      // Trigger update
+      setRowUpdateTrigger(prev => prev + 1);
     }
-    setExpandedRows(newExpanded);
+  }, [editingRow]);
+
+  // When edit mode is canceled, reset the row height
+  useEffect(() => {
+    if (editingRow === null) {
+      // Reset any previously set heights when editing is canceled
+      Object.keys(rowHeightMapRef.current).forEach(key => {
+        delete rowHeightMapRef.current[Number(key)];
+      });
+
+      // Force recalculation
+      if (listRef.current) {
+        listRef.current.resetAfterIndex(0);
+      }
+
+      // Trigger update
+      setRowUpdateTrigger(prev => prev + 1);
+    }
+  }, [editingRow]);
+
+  // Reset heights when data changes
+  useEffect(() => {
+    rowHeightMapRef.current = {};
+    if (listRef.current) {
+      listRef.current.resetAfterIndex(0);
+    }
+  }, [data]);
+
+  // Fetch reference data on mount
+  useEffect(() => {
+    fetchReferenceData();
+  }, []);
+
+  const fetchReferenceData = async () => {
+    setIsLoadingReferenceData(true);
+    try {
+      // Replace these with your actual API endpoints
+      // Based on your JobForm, these might be:
+      // /api/customers, /api/services, /api/vehicles, /api/drivers, /api/contractors, /api/vehicle-types
+      const [customersRes, servicesRes, vehiclesRes, driversRes, contractorsRes, vehicleTypesRes] = await Promise.all([
+        fetch('/api/customers').then(r => r.json()),
+        fetch('/api/services').then(r => r.json()),
+        fetch('/api/vehicles').then(r => r.json()),
+        fetch('/api/drivers').then(r => r.json()),
+        fetch('/api/contractors').then(r => r.json()),
+        fetch('/api/vehicle-types').then(r => r.json())
+      ]);
+
+      console.log('✅ Vehicle Types fetched from API:', vehicleTypesRes);
+
+      setReferenceData({
+        customers: customersRes,
+        services: servicesRes,
+        vehicles: vehiclesRes,
+        drivers: driversRes,
+        contractors: contractorsRes,
+        vehicle_types: vehicleTypesRes
+      });
+    } catch (error) {
+      console.error('Error fetching reference data:', error);
+      toast.error('Failed to load dropdown data');
+    } finally {
+      setIsLoadingReferenceData(false);
+    }
   };
 
-  // Toggle row selection
-  const toggleRowSelection = (rowNumber: number) => {
-    const newSelected = new Set(selectedRows);
-    if (newSelected.has(rowNumber)) {
-      newSelected.delete(rowNumber);
-    } else {
-      newSelected.add(rowNumber);
-    }
-    setSelectedRows(newSelected);
-  };
+  // ==========================================
+  // MEMOIZED CALLBACKS
+  // ==========================================
 
-  // Select all valid rows
-  const selectAllValid = () => {
+  const toggleRowExpansion = useCallback((rowNumber: number) => {
+    setExpandedRows(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(rowNumber)) {
+        newExpanded.delete(rowNumber);
+      } else {
+        newExpanded.add(rowNumber);
+      }
+      return newExpanded;
+    });
+  }, []);
+
+  const toggleRowSelection = useCallback((rowNumber: number) => {
+    setSelectedRows(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(rowNumber)) {
+        newSelected.delete(rowNumber);
+      } else {
+        newSelected.add(rowNumber);
+      }
+      return newSelected;
+    });
+  }, []);
+
+  const selectAllValid = useCallback(() => {
     const validRowNumbers = data
       .filter(row => row.is_valid && !row.is_rejected)
       .map(row => row.row_number);
     setSelectedRows(new Set(validRowNumbers));
-  };
+  }, [data]);
 
-  const selectAllRows = () => {
+  const selectAllRows = useCallback(() => {
     const allRowNumbers = data
       .filter(row => !row.is_rejected)
       .map(row => row.row_number);
     setSelectedRows(new Set(allRowNumbers));
-  };
+  }, [data]);
 
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     setSelectedRows(new Set());
-  };
+  }, []);
 
-  const rejectRow = (rowNumber: number) => {
+  const rejectRow = useCallback((rowNumber: number) => {
     if (onUpdateRow) {
-    const row = data.find(r => r.row_number === rowNumber);
+      const row = data.find(r => r.row_number === rowNumber);
       if (row) {
         const updatedRow = { ...row, is_rejected: !row.is_rejected };
-      onUpdateRow(rowNumber, updatedRow);
+        onUpdateRow(rowNumber, updatedRow);
       }
     }
-  };
+  }, [data, onUpdateRow]);
 
-  const downloadSelectedRows = async () => {
+  const downloadSelectedRows = useCallback(async () => {
     if (selectedRows.size === 0) return;
-    
+
     const selectedData = data.filter(row => selectedRows.has(row.row_number));
     try {
       await uploadDownloadApi.downloadSelectedRows(selectedData);
     } catch (error) {
       console.error('Error downloading selected rows:', error);
     }
-  };
+  }, [selectedRows, data]);
 
-  const startEditing = (row: ExcelRow) => {
+  const startEditing = useCallback((row: ExcelRow) => {
+    // Store the original data for this row
+    editingDataRef.current[row.row_number] = { ...row };
+
+    // Set editing row
     setEditingRow(row.row_number);
-    setEditingData({ ...row });
-    setValidationErrors({});
-  };
 
-  const cancelEditing = () => {
+    // Scroll to the row after a short delay to ensure height is updated
+    setTimeout(() => {
+      if (listRef.current) {
+        const rowIndex = data.findIndex(r => r.row_number === row.row_number);
+        if (rowIndex !== -1) {
+          listRef.current.scrollToItem(rowIndex, "start");
+        }
+      }
+    }, 100);
+  }, [data]);
+
+  const cancelEditing = useCallback(() => {
+    if (editingRow) {
+      delete editingDataRef.current[editingRow];
+    }
     setEditingRow(null);
-    setEditingData(null);
-  };
+  }, [editingRow]);
 
-  const saveEditing = async () => {
-    if (!editingData || !onUpdateRow) return;
+  const saveEditing = useCallback(async () => {
+    if (!editingRow || !editingDataRef.current[editingRow] || !onUpdateRow) return;
 
-      setIsValidating(true);
-      try {
-      const response = await uploadDownloadApi.validateRow(editingData);
-        
-        const updatedRow = {
-          ...editingData,
-        is_valid: response.is_valid,
-        error_message: response.error_message || ''
-        };
-        
-        onUpdateRow(editingData.row_number, updatedRow);
-        setEditingRow(null);
-        setEditingData(null);
-    
-      if (response.is_valid) {
-        toast.success('Row validated successfully!');
-      } else {
-        toast.error(`Validation failed: ${response.error_message}`);
-      }
-      
-      } catch (error) {
+    setIsValidating(true);
+    const currentEditData = editingDataRef.current[editingRow];
+
+    try {
+      // Since we're using dropdowns, the IDs are already set
+      // Just mark as valid and save
+      const updatedRow = {
+        ...currentEditData,
+        is_valid: true,
+        error_message: ''
+      };
+
+      onUpdateRow(editingRow, updatedRow);
+      delete editingDataRef.current[editingRow];
+      setEditingRow(null);
+      toast.success('Row updated successfully!');
+
+    } catch (error) {
       console.error('Error saving row:', error);
-      toast.error('Failed to validate row. Please try again.');
-      const errorRow = {
-          ...editingData,
-          is_valid: false,
-        error_message: 'Validation failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+      toast.error('Failed to update row. Please try again.');
+    } finally {
+      setIsValidating(false);
+    }
+  }, [editingRow, onUpdateRow]);
+
+  const handleSort = useCallback((key: keyof ExcelRow) => {
+    setSortConfig(prevConfig => {
+      if (prevConfig?.key === key) {
+        return {
+          key,
+          direction: prevConfig.direction === 'asc' ? 'desc' : 'asc'
         };
-      onUpdateRow(editingData.row_number, errorRow);
-        setEditingRow(null);
-        setEditingData(null);
-      } finally {
-        setIsValidating(false);
       }
-  };
-
-  // Client-side validation functions
-  const validateInput = (field: keyof ExcelRow, value: string): { isValid: boolean; error: string; validatedValue: string } => {
-    const trimmedValue = value.trim();
-    
-    const requiredFields = ['customer', 'service', 'vehicle', 'driver', 'pickup_date', 'pickup_time', 'pickup_location', 'dropoff_location'];
-    if (requiredFields.includes(field) && !trimmedValue) {
-      return { isValid: false, error: `${field.charAt(0).toUpperCase() + field.slice(1)} is required`, validatedValue: value };
-    }
-    
-    switch (field) {
-      case 'pickup_date':
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(trimmedValue)) {
-          return { isValid: false, error: 'Date must be in YYYY-MM-DD format', validatedValue: value };
-        }
-        const date = new Date(trimmedValue);
-        if (isNaN(date.getTime())) {
-          return { isValid: false, error: 'Invalid date format', validatedValue: value };
-        }
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (date < today) {
-          return { isValid: false, error: 'Date cannot be in the past', validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'pickup_time':
-        const timeRegex = /^\d{2}:\d{2}$/;
-        if (!timeRegex.test(trimmedValue)) {
-          return { isValid: false, error: 'Time must be in HH:MM format', validatedValue: value };
-        }
-        const [hours, minutes] = trimmedValue.split(':').map(Number);
-        if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-          return { isValid: false, error: 'Invalid time format', validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'customer':
-      case 'service':
-      case 'vehicle':
-      case 'driver':
-        if (trimmedValue.length < 2) {
-          return { isValid: false, error: `${field.charAt(0).toUpperCase() + field.slice(1)} must be at least 2 characters`, validatedValue: value };
-        }
-        if (trimmedValue.length > 100) {
-          return { isValid: false, error: `${field.charAt(0).toUpperCase() + field.slice(1)} must be less than 100 characters`, validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'pickup_location':
-      case 'dropoff_location':
-        if (trimmedValue.length < 5) {
-          return { isValid: false, error: `${field.charAt(0).toUpperCase() + field.slice(1)} must be at least 5 characters`, validatedValue: value };
-        }
-        if (trimmedValue.length > 200) {
-          return { isValid: false, error: `${field.charAt(0).toUpperCase() + field.slice(1)} must be less than 200 characters`, validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'passenger_name':
-        if (trimmedValue && trimmedValue.length < 2) {
-          return { isValid: false, error: 'Passenger name must be at least 2 characters', validatedValue: value };
-        }
-        if (trimmedValue && trimmedValue.length > 100) {
-          return { isValid: false, error: 'Passenger name must be less than 100 characters', validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'status':
-        const validStatuses = ['new', 'pending', 'confirmed', 'otw', 'ots', 'pob', 'jc', 'sd', 'canceled'];
-        if (trimmedValue && !validStatuses.includes(trimmedValue.toLowerCase())) {
-          return { isValid: false, error: `Status must be one of: ${validStatuses.join(', ')}`, validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      case 'remarks':
-        if (trimmedValue && trimmedValue.length > 500) {
-          return { isValid: false, error: 'Remarks must be less than 500 characters', validatedValue: value };
-        }
-        return { isValid: true, error: '', validatedValue: trimmedValue };
-        
-      default:
-        return { isValid: true, error: '', validatedValue: value };
-    }
-  };
-
-  const updateEditingData = (field: keyof ExcelRow, value: string) => {
-    if (!editingData) return;
-    
-    const validation = validateInput(field, value);
-    
-    setValidationErrors(prev => ({
-      ...prev,
-      [field]: validation.error
-    }));
-    
-      setEditingData({
-        ...editingData,
-      [field]: validation.validatedValue
+      return { key, direction: 'asc' };
     });
-  };
+  }, []);
 
-  const isFormValid = useMemo(() => {
-    if (!editingData) return false;
-    
-    const requiredFields = ['customer', 'service', 'vehicle', 'driver', 'pickup_date', 'pickup_time', 'pickup_location', 'dropoff_location'];
-    
-    for (const field of requiredFields) {
-      const validation = validateInput(field as keyof ExcelRow, editingData[field as keyof ExcelRow] as string);
-      if (!validation.isValid) {
-        return false;
-      }
-    }
-    
-    return true;
-  }, [editingData]);
+  // ==========================================
+  // MEMOIZED VALUES
+  // ==========================================
 
-  const getFieldError = (field: keyof ExcelRow): string => {
-    return validationErrors[field] || '';
-  };
+  const selectedValidRows = useMemo(() => {
+    return data.filter(row => selectedRows.has(row.row_number) && row.is_valid && !row.is_rejected);
+  }, [data, selectedRows]);
+
+  const selectedValidCount = selectedValidRows.length;
+
+  const hasSelection = selectedRows.size > 0;
+  const uploadableCount = hasSelection ? selectedValidCount : validCount;
 
   const sortedData = useMemo(() => {
     if (!sortConfig) return data;
 
     return [...data].sort((a, b) => {
-      const aValue = a[sortConfig.key] as string | number | undefined;
-      const bValue = b[sortConfig.key] as string | number | undefined;
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
 
-      if (!aValue && !bValue) return 0;
-      if (!aValue) return 1;
-      if (!bValue) return -1;
+      if (aValue === bValue) return 0;
 
-      if (aValue < bValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (aValue > bValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
+      const comparison = aValue < bValue ? -1 : 1;
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
     });
   }, [data, sortConfig]);
 
-  const handleSort = (key: keyof ExcelRow) => {
-    setSortConfig(current => {
-      if (current?.key === key) {
-        return {
-          key,
-          direction: current.direction === 'asc' ? 'desc' : 'asc'
-        };
-      }
-      return { key, direction: 'asc' };
-    });
-  };
+  useEffect(() => {
+    if (onSelectionChange) {
+      const selectedRowNumbers = Array.from(selectedRows);
+      onSelectionChange(selectedRowNumbers, selectedValidCount);
+    }
+  }, [selectedRows, selectedValidCount, onSelectionChange]);
 
-  const getStatusIcon = (isValid: boolean, errorMessage: string, isRejected: boolean = false) => {
-    if (isRejected) {
-      return <RejectIcon className="w-5 h-5 text-gray-500" />;
-    }
-    if (isValid) {
-      return <CheckCircleIcon className="w-5 h-5 text-green-500" />;
-    }
-    if (errorMessage.includes('Missing')) {
-      return <ExclamationTriangleIcon className="w-5 h-5 text-yellow-500" />;
-    }
-    return <XCircleIcon className="w-5 h-5 text-red-500" />;
-  };
-
-  // Calculate row height based on expansion and editing state
   const getRowHeight = useCallback((index: number) => {
     const row = sortedData[index];
-    if (!row) return 60; // Default height
-    
-    const isExpanded = expandedRows.has(row.row_number);
-    const isEditing = editingRow === row.row_number;
-    
-    let height = 60; // Base row height
-    
-    if (isExpanded) {
-      height += 140; // Height for expanded details (increased for better spacing)
-    }
-    
-    if (isEditing) {
-      height += 550; // Height for editing form (increased for better spacing and button padding)
-    }
-    
-    return height;
-  }, [sortedData, expandedRows, editingRow]);
+    if (!row) return 40;
 
-  // Reset cache when data changes
-  const listRef = React.useRef<VList>(null);
-  React.useEffect(() => {
+    // If this row is being edited, return the stored larger height
+    if (editingRow === row.row_number && rowHeightMapRef.current[row.row_number]) {
+      return rowHeightMapRef.current[row.row_number];
+    }
+
+    // For expanded but not editing rows
+    if (expandedRows.has(row.row_number)) {
+      return 150;
+    }
+
+    return 40;
+  }, [sortedData, expandedRows, editingRow, rowUpdateTrigger]);
+
+  useEffect(() => {
     if (listRef.current) {
       listRef.current.resetAfterIndex(0);
     }
-  }, [sortedData, expandedRows, editingRow]);
+  }, [expandedRows, editingRow]);
 
-  // Removed unnecessary callback wrappers to prevent memory leaks
-  // const handleRowClick = useCallback((rowNumber: number) => {
-  //   toggleRowExpansion(rowNumber);
-  //   // Force re-render to update virtualization
-  //   setTimeout(() => forceUpdate({}), 0);
-  // }, [toggleRowExpansion]);
-
-  // const handleRowKeyDown = useCallback((rowNumber: number, e: React.KeyboardEvent) => {
-  //   if (e.key === 'Enter' || e.key === ' ') {
-  //     e.preventDefault();
-  //     toggleRowExpansion(rowNumber);
-  //   }
-  // }, [toggleRowExpansion]);
-
-  // const handleRowSelection = useCallback((rowNumber: number) => {
-  //   toggleRowSelection(rowNumber);
-  // }, [toggleRowSelection]);
-
-  // const handleStartEditing = useCallback((row: ExcelRow) => {
-  //   startEditing(row);
-  // }, [startEditing]);
-
-  // const handleRejectRow = useCallback((rowNumber: number) => {
-  //   rejectRow(rowNumber);
-  // }, [rejectRow]);
-
-  // const handleUpdateEditingData = useCallback((field: keyof ExcelRow, value: string) => {
-  //   updateEditingData(field, value);
-  // }, [updateEditingData]);
-
-  // Optimized row content component to prevent memory leaks
-  const RowContent = useCallback(({ row, isExpanded, isSelected, isEditing }: {
-    row: ExcelRow;
-    isExpanded: boolean;
-    isSelected: boolean;
-    isEditing: boolean;
-  }) => {
+  if (isLoading) {
     return (
-      <>
-        <div
-          key={row.row_number}
-          className={clsx(
-            "border-b border-border-color/60 transition-all duration-200 cursor-pointer group relative",
-            isSelected && "bg-blue-500/10 border-blue-500/20",
-            isExpanded && "bg-primary/5 hover:bg-primary/10",
-            !isExpanded && "hover:bg-background-light/70"
-          )}
-          style={{
-            backgroundColor: row.is_valid 
-              ? 'rgba(34, 197, 94, 0.1)' 
-              : 'rgba(239, 68, 68, 0.2)',
-            borderColor: row.is_valid 
-              ? 'rgba(34, 197, 94, 0.2)' 
-              : 'rgba(239, 68, 68, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            minHeight: '60px'
-          }}
-          data-is-valid={row.is_valid}
-          data-row-number={row.row_number}
-          title={`Row ${row.row_number}: is_valid=${row.is_valid}, error=${row.error_message}`}
-          onClick={(e) => {
-            const target = e.target as HTMLElement;
-            if (!target.closest('button') && !target.closest('input') && !target.closest('a') && !target.closest('[role="button"]')) {
-              toggleRowExpansion(row.row_number);
-            }
-          }}
-          aria-expanded={isExpanded}
-          role="row"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleRowExpansion(row.row_number);
-            }
-          }}
-        >
-          <div className="px-6 py-3.5 w-10 flex-shrink-0">
-            {!row.is_rejected && (
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleRowSelection(row.row_number)}
-                onClick={(e) => e.stopPropagation()}
-                className="form-checkbox h-4 w-4 text-primary bg-background-light border-border-color rounded focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-background"
-              />
-            )}
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-background-light rounded-xl shadow-xl border border-border-color overflow-hidden">
+      {/* Header Section - keeping original structure */}
+      <div className="px-6 py-4 bg-gradient-to-r from-background-light to-background-hover border-b border-border-color">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-text-main">Upload Preview</h2>
+            <p className="text-sm text-text-secondary mt-1">
+              Review and validate your data before uploading
+            </p>
           </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {getStatusIcon(row.is_valid, row.error_message, row.is_rejected)}
-          </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {row.row_number}
-          </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {row.customer}
-          </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {row.service}
-          </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {row.pickup_date}
-          </div>
-          <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0">
-            {row.pickup_location}
-          </div>
-                     <div className="px-4 py-3 sticky right-0 text-right flex-shrink-0 min-w-[120px]">
-             <div className="flex items-center justify-end space-x-2 w-full">
-                                    <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                  toggleRowExpansion(row.row_number);
-                }}
-                className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
-                title={isExpanded ? "Collapse row" : "Expand row"}
-              >
-                {isExpanded ? (
-                  <ChevronDownIcon className="w-5 h-5" />
-                ) : (
-                  <ChevronRightIcon className="w-5 h-5" />
-                )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                  startEditing(row);
-                    }}
-                className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
-                title="Edit row"
-                  >
-                <PencilIcon className="w-4 h-4" />
-                  </button>
-                                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                  rejectRow(row.row_number);
-                }}
-                className="p-1 text-gray-500 hover:text-red-600 transition-colors"
-                title={row.is_rejected ? "Unreject row" : "Reject row"}
-              >
-                <RejectIcon className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          {/* <button
+            onClick={onDownloadTemplate}
+            className="flex items-center space-x-2 px-4 py-2 bg-background-hover hover:bg-background-dark border border-border-color rounded-lg transition-colors"
+          >
+            <DocumentArrowDownIcon className="w-5 h-5 text-primary" />
+            <span className="text-sm font-medium text-text-main">Download Template</span>
+          </button> */}
         </div>
-        
-        {/* Expanded row details */}
-        {isExpanded && (
-          <div className="bg-background-light/50 border-b border-border-color/60 px-6 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-background-hover rounded-lg p-4 border border-border-color">
+            <div className="flex items-center justify-between">
               <div>
-                <span className="font-medium text-text-secondary">Vehicle:</span>
-                <span className="ml-2 text-text-main">{row.vehicle || 'N/A'}</span>
+                <p className="text-sm text-text-secondary">Total Rows</p>
+                <p className="text-2xl font-bold text-text-main mt-1">{data.length}</p>
               </div>
-              <div>
-                <span className="font-medium text-text-secondary">Driver:</span>
-                <span className="ml-2 text-text-main">{row.driver || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-text-secondary">Pickup Time:</span>
-                <span className="ml-2 text-text-main">{row.pickup_time || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-text-secondary">Dropoff Location:</span>
-                <span className="ml-2 text-text-main">{row.dropoff_location || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-text-secondary">Passenger Name:</span>
-                <span className="ml-2 text-text-main">{row.passenger_name || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-text-secondary">Status:</span>
-                <span className="ml-2 text-text-main">{row.status || 'N/A'}</span>
-              </div>
-              {row.remarks && (
-                <div className="md:col-span-2 lg:col-span-3">
-                  <span className="font-medium text-text-secondary">Remarks:</span>
-                  <span className="ml-2 text-text-main">{row.remarks}</span>
-                </div>
-              )}
-              {row.error_message && (
-                <div className="md:col-span-2 lg:col-span-3">
-                  <span className="font-medium text-red-600">Error:</span>
-                  <span className="ml-2 text-red-600">{row.error_message}</span>
-                </div>
-              )}
+              <DocumentArrowUpIcon className="w-8 h-8 text-blue-500 opacity-50" />
             </div>
           </div>
-        )}
-        
-        {/* Editing form */}
-        {isEditing && editingData && (
-          <div className="bg-background-light/80 border-b border-blue-200 px-6 py-4 pb-8 shadow-sm mb-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Customer</label>
-                        <input
-                          type="text"
-                  value={editingData.customer}
-                  onChange={(e) => updateEditingData('customer', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                    getFieldError('customer')
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                />
-                {getFieldError('customer') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('customer')}</p>
-                )}
-                          </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Service</label>
-                <input
-                  type="text"
-                  value={editingData.service}
-                  onChange={(e) => updateEditingData('service', e.target.value)}
-                  className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                    getFieldError('service')
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300"
-                  )}
-                  style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                />
-                {getFieldError('service') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('service')}</p>
-                        )}
-                      </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Vehicle</label>
-                <input
-                  type="text"
-                  value={editingData.vehicle}
-                  onChange={(e) => updateEditingData('vehicle', e.target.value)}
-                  className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                    getFieldError('vehicle')
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300"
-                  )}
-                  style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                />
-                {getFieldError('vehicle') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('vehicle')}</p>
-                )}
-                </div>
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Driver</label>
-                        <input
-                          type="text"
-                  value={editingData.driver}
-                  onChange={(e) => updateEditingData('driver', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('driver') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                        />
-                        {getFieldError('driver') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('driver')}</p>
-                        )}
-                      </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Pickup Date</label>
-                <input
-                  type="date"
-                  value={editingData.pickup_date}
-                  onChange={(e) => updateEditingData('pickup_date', e.target.value)}
-                  className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                    getFieldError('pickup_date')
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300"
-                  )}
-                  style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                />
-                {getFieldError('pickup_date') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('pickup_date')}</p>
-                )}
-                </div>
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Pickup Time</label>
-                        <input
-                          type="time"
-                  value={editingData.pickup_time}
-                  onChange={(e) => updateEditingData('pickup_time', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('pickup_time') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                        />
-                        {getFieldError('pickup_time') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('pickup_time')}</p>
-                        )}
-                      </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Pickup Location</label>
-                <input
-                  type="text"
-                  value={editingData.pickup_location}
-                  onChange={(e) => updateEditingData('pickup_location', e.target.value)}
-                  className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                    getFieldError('pickup_location')
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300"
-                  )}
-                  style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                />
-                {getFieldError('pickup_location') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('pickup_location')}</p>
-                )}
-                </div>
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Dropoff Location</label>
-                        <input
-                          type="text"
-                  value={editingData.dropoff_location}
-                  onChange={(e) => updateEditingData('dropoff_location', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('dropoff_location') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                        />
-                        {getFieldError('dropoff_location') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('dropoff_location')}</p>
-                        )}
-                </div>
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Passenger Name</label>
-                        <input
-                          type="text"
-                  value={editingData.passenger_name}
-                  onChange={(e) => updateEditingData('passenger_name', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('passenger_name') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                        />
-                        {getFieldError('passenger_name') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('passenger_name')}</p>
-                        )}
-                </div>
-                <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Status</label>
-                <select
-                  value={editingData.status}
-                  onChange={(e) => updateEditingData('status', e.target.value)}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('status') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                >
-                  <option value="">Select status</option>
-                  <option value="new">New</option>
-                  <option value="pending">Pending</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="otw">OTW (On The Way)</option>
-                  <option value="ots">OTS (On The Site)</option>
-                  <option value="pob">POB (Passenger On Board)</option>
-                  <option value="jc">JC (Job Complete)</option>
-                  <option value="sd">SD (Service Delivered)</option>
-                  <option value="canceled">Canceled</option>
-                </select>
-                        {getFieldError('status') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('status')}</p>
-                        )}
-                </div>
-                <div className="md:col-span-2 lg:col-span-3">
-                <label className="block text-sm font-semibold text-gray-800 mb-1">Remarks</label>
-                <textarea
-                  value={editingData.remarks}
-                  onChange={(e) => updateEditingData('remarks', e.target.value)}
-                  rows={3}
-                          className={clsx(
-                    "w-full px-3 py-2 border rounded-md text-sm",
-                            getFieldError('remarks') 
-                              ? "border-red-500 focus:ring-red-500 focus:border-red-500" 
-                              : "border-gray-300"
-                          )}
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                        />
-                        {getFieldError('remarks') && (
-                  <p className="text-red-500 text-xs mt-1">{getFieldError('remarks')}</p>
-                        )}
-                      </div>
-                  </div>
-            <div className="flex items-center justify-end space-x-3 mt-6 pb-4">
-                  <button
-                onClick={cancelEditing}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded-md transition-colors"
-              >
-                Cancel
-                  </button>
-                  <button
-                onClick={saveEditing}
-                disabled={!isFormValid || isValidating}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-              >
-                {isValidating ? 'Validating...' : 'Save Changes'}
-                  </button>
-                  </div>
-                </div>
-              )}
-      </>
-    );
-  }, [toggleRowExpansion, toggleRowSelection, startEditing, rejectRow, updateEditingData, getStatusIcon, getFieldError, isFormValid, isValidating, cancelEditing, saveEditing]);
 
-  // Optimized row renderer with minimal dependencies
-  const RowRenderer = useCallback((row: ExcelRow) => {
-    if (!row) return null;
-
-    const isExpanded = expandedRows.has(row.row_number);
-    const isSelected = selectedRows.has(row.row_number);
-    const isEditing = editingRow === row.row_number;
-
-  return (
-      <RowContent 
-        row={row}
-        isExpanded={isExpanded}
-        isSelected={isSelected}
-        isEditing={isEditing}
-      />
-    );
-  }, [expandedRows, selectedRows, editingRow, RowContent]);
-
-  return (
-    <div className="bg-background-light backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-border-color">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-border-color">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h3 className="text-lg font-semibold text-text-main">Excel Upload Preview</h3>
-            <div className="flex items-center space-x-2">
-              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                {validCount} Valid
-              </span>
-              <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
-                {errorCount} Errors
-              </span>
+          <div className="bg-green-500/10 rounded-lg p-4 border border-green-500/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600">Valid Rows</p>
+                <p className="text-2xl font-bold text-green-600 mt-1">{validCount}</p>
+              </div>
+              <CheckCircleIcon className="w-8 h-8 text-green-500 opacity-50" />
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={onDownloadTemplate}
-              className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors"
-              style={{ 
-                color: 'var(--color-primary)', 
-                backgroundColor: 'rgba(59, 130, 246, 0.1)', 
-                borderColor: 'var(--color-primary)' 
-              }}
-            >
-              <DocumentArrowDownIcon className="w-4 h-4 inline mr-1" />
-              Download Template
-            </button>
-            <button
-              onClick={onRevalidate}
-              className="px-3 py-1.5 text-sm font-medium border rounded-md transition-colors"
-              style={{ 
-                color: '#f97316', 
-                backgroundColor: 'rgba(249, 115, 22, 0.1)', 
-                borderColor: '#f97316' 
-              }}
-            >
-              <DocumentArrowUpIcon className="w-4 h-4 inline mr-1" />
-              Revalidate
-            </button>
+
+          <div className="bg-red-500/10 rounded-lg p-4 border border-red-500/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-red-600">Errors</p>
+                <p className="text-2xl font-bold text-red-600 mt-1">{errorCount}</p>
+              </div>
+              <XCircleIcon className="w-8 h-8 text-red-500 opacity-50" />
+            </div>
+          </div>
+
+          <div className="bg-primary/10 rounded-lg p-4 border border-primary/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-primary">Selected</p>
+                <p className="text-2xl font-bold text-primary mt-1">{selectedRows.size}</p>
+              </div>
+              <CheckIcon className="w-8 h-8 text-primary opacity-50" />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="px-6 py-3 border-b border-border-color">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={selectAllValid}
-              className="px-3 py-1 text-sm font-medium hover:text-blue-700 text-primary"
-            >
-              Select All Valid
-            </button>
-            <button
-              onClick={selectAllRows}
-              className="px-3 py-1 text-sm font-medium hover:text-blue-700 text-primary"
-            >
-              Select All
-            </button>
-            <button
-              onClick={clearSelection}
-              className="px-3 py-1 text-sm font-medium hover:text-gray-700 text-text-secondary"
-            >
-              Clear Selection
-            </button>
-            {selectedRows.size > 0 && (
+      {/* Selection Controls */}
+      <div className="px-6 py-3 bg-background-hover border-b border-border-color flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={selectAllValid}
+            className="px-3 py-1.5 text-xs font-medium text-primary hover:text-primary-dark border border-primary/30 rounded-md hover:bg-primary/10 transition-colors"
+          >
+            Select All Valid
+          </button>
+          <button
+            onClick={selectAllRows}
+            className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-main border border-border-color rounded-md hover:bg-background-light transition-colors"
+          >
+            Select All
+          </button>
+          {selectedRows.size > 0 && (
+            <>
+              <button
+                onClick={clearSelection}
+                className="px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 border border-red-600/30 rounded-md hover:bg-red-50 transition-colors"
+              >
+                Clear Selection
+              </button>
               <button
                 onClick={downloadSelectedRows}
-                className="px-3 py-1 text-sm font-medium text-green-600 hover:text-green-700"
+                className="px-3 py-1.5 text-xs font-medium text-text-main hover:text-primary border border-border-color rounded-md hover:bg-background-light transition-colors flex items-center space-x-1"
               >
-                Download Selected ({selectedRows.size})
+                <DocumentArrowDownIcon className="w-4 h-4" />
+                <span>Download Selected</span>
               </button>
-            )}
-            <span className="text-sm text-text-secondary">
-              {selectedRows.size} selected
-            </span>
-          </div>
-          {validCount > 0 && (
-            <button
-              onClick={onConfirmUpload}
-              disabled={isLoading}
-              className="px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{ backgroundColor: '#10b981' }}
-            >
-              {isLoading ? 'Processing...' : `Confirm Upload (${validCount})`}
-            </button>
+            </>
           )}
         </div>
+
+        {selectedRows.size > 0 && (
+          <div className="text-sm text-text-secondary">
+            <span className="font-medium text-primary">{selectedValidCount}</span> of{' '}
+            <span className="font-medium">{selectedRows.size}</span> selected rows are valid
+          </div>
+        )}
       </div>
 
       {/* Virtualized Table */}
-      <div className="overflow-auto">
-        {/* Table Header */}
-        <div className="text-xs font-medium text-text-secondary bg-background-light/95 backdrop-blur-md sticky top-0 z-10 border-b border-border-color">
-          <div 
-            className="flex items-center w-full text-sm text-left text-text-main"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              minHeight: '60px'
-            }}
+      <div className="overflow-auto excel-upload-table-container" style={{ height: '600px' }}>
+        <style jsx>{`
+          .excel-upload-table-container :global(> div) {
+            overflow: visible !important;
+          }
+        `}</style>
+        <VList
+          ref={listRef}
+          height={600}
+          itemCount={sortedData.length}
+          itemSize={getRowHeight}
+          width="100%"
+          overscanCount={5}
+        >
+          {({ index, style }) => (
+            <RowItem
+              key={sortedData[index].row_number}
+              row={sortedData[index]}
+              style={style}
+              isExpanded={expandedRows.has(sortedData[index].row_number)}
+              isEditing={editingRow === sortedData[index].row_number}
+              isSelected={selectedRows.has(sortedData[index].row_number)}
+              onToggleExpansion={toggleRowExpansion}
+              onToggleSelection={toggleRowSelection}
+              onStartEditing={startEditing}
+              onCancelEditing={cancelEditing}
+              onSaveEditing={saveEditing}
+              onRejectRow={rejectRow}
+              editingDataRef={editingDataRef}
+              isValidating={isValidating}
+              referenceData={referenceData}
+              isLoadingReferenceData={isLoadingReferenceData}
+            />
+          )}
+        </VList>
+      </div>
+
+      {/* Footer Actions */}
+      {/* <div className="px-6 py-1 bg-background-hover border-t border-border-color flex items-center justify-between">
+        <div className="text-sm text-text-secondary">
+          {hasSelection ? (
+            <>
+              Ready to upload <span className="font-bold text-primary">{uploadableCount}</span> selected valid row(s)
+            </>
+          ) : (
+            <>
+              Ready to upload <span className="font-bold text-primary">{uploadableCount}</span> valid row(s)
+            </>
+          )}
+        </div>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onRevalidate}
+            disabled={errorCount === 0}
+            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-main border border-border-color rounded-lg hover:bg-background-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <div className="px-6 py-3.5 w-10 flex-shrink-0">
-                <input
-                  type="checkbox"
-                  checked={selectedRows.size === data.filter(row => !row.is_rejected).length && data.filter(row => !row.is_rejected).length > 0}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      selectAllRows();
-                    } else {
-                      clearSelection();
-                    }
-                  }}
-                  className="form-checkbox h-4 w-4 text-primary bg-background-light border-border-color rounded-md focus:ring-2 focus:ring-primary/40 focus:ring-offset-0"
-                />
-            </div>
-            <div className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md flex-shrink-0">
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">Status</div>
-            </div>
-            <div 
-                className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0 cursor-pointer"
-                onClick={() => handleSort('row_number')}
-              >
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">
-                  Row
-                  {sortConfig?.key === 'row_number' && (
-                    <span className="ml-1">
-                      {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-            </div>
-            <div 
-                className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0 cursor-pointer"
-                onClick={() => handleSort('customer')}
-              >
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">
-                  Customer
-                  {sortConfig?.key === 'customer' && (
-                    <span className="ml-1">
-                      {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-            </div>
-            <div 
-                className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0 cursor-pointer"
-                onClick={() => handleSort('service')}
-              >
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">
-                  Service
-                  {sortConfig?.key === 'service' && (
-                    <span className="ml-1">
-                      {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-            </div>
-            <div 
-                className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0 cursor-pointer"
-                onClick={() => handleSort('pickup_date')}
-              >
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">
-                  Date
-                  {sortConfig?.key === 'pickup_date' && (
-                    <span className="ml-1">
-                      {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-            </div>
-            <div 
-                className="px-4 py-3 whitespace-normal break-words max-w-xs md:max-w-sm lg:max-w-md text-text-main flex-shrink-0 cursor-pointer"
-                onClick={() => handleSort('pickup_location')}
-              >
-                <div className="font-bold text-base text-text-main whitespace-normal break-words">
-                  Pickup
-                  {sortConfig?.key === 'pickup_location' && (
-                    <span className="ml-1">
-                      {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-                        </div>
-            <div className="px-4 py-3 sticky right-0 text-right flex-shrink-0 min-w-[120px]">
-                <div className="font-bold text-base text-text-secondary text-right" style={{ width: '100%' }}>Actions</div>
-                      </div>
-                          </div>
-                          </div>
-        
-        {/* Table Body */}
-        {sortedData.length > 0 ? (
-          <div className="text-sm text-left text-text-main">
-            <VList
-              ref={listRef}
-              height={Math.min(600, sortedData.length * 60 + (expandedRows.size * 140) + (editingRow ? 550 : 0))}
-              itemCount={sortedData.length}
-              itemSize={getRowHeight}
-              overscanCount={5}
-              width="100%"
-            >
-              {({ index, style }) => (
-                <div style={style}>
-                  {RowRenderer(sortedData[index])}
-                </div>
-              )}
-            </VList>
-                          </div>
-        ) : (
-          <div className="flex items-center justify-center py-8 text-text-secondary">
-            <div className="text-center">
-              <div className="text-lg font-medium mb-2">No data to display</div>
-              <div className="text-sm">Upload an Excel file to see the preview</div>
-                          </div>
-                          </div>
-                            )}
-                          </div>
+            Re-validate All
+          </button>
+          <button
+            onClick={onConfirmUpload}
+            disabled={uploadableCount === 0}
+            className="px-6 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {hasSelection ? `Upload ${uploadableCount} Selected Row(s)` : `Upload ${uploadableCount} Valid Row(s)`}
+          </button>
+        </div>
+      </div> */}
     </div>
   );
-} 
+}
+
+// ==========================================
+// ROW ITEM COMPONENT
+// ==========================================
+
+interface RowItemProps {
+  row: ExcelRow;
+  style: React.CSSProperties;
+  isExpanded: boolean;
+  isEditing: boolean;
+  isSelected: boolean;
+  onToggleExpansion: (rowNumber: number) => void;
+  onToggleSelection: (rowNumber: number) => void;
+  onStartEditing: (row: ExcelRow) => void;
+  onCancelEditing: () => void;
+  onSaveEditing: () => void;
+  onRejectRow: (rowNumber: number) => void;
+  editingDataRef: React.MutableRefObject<Record<number, ExcelRow>>;
+  isValidating: boolean;
+  referenceData: ReferenceData;
+  isLoadingReferenceData: boolean;
+}
+
+function RowItem({
+  row,
+  style,
+  isExpanded,
+  isEditing,
+  isSelected,
+  onToggleExpansion,
+  onToggleSelection,
+  onStartEditing,
+  onCancelEditing,
+  onSaveEditing,
+  onRejectRow,
+  editingDataRef,
+  isValidating,
+  referenceData,
+  isLoadingReferenceData
+}: RowItemProps) {
+
+  const baseRowClass = clsx(
+    "border-b border-border-color transition-all duration-200 box-border leading-none",
+    {
+      "bg-green-500/5": row.is_valid && !row.is_rejected,
+      "bg-red-500/5": !row.is_valid && !row.is_rejected,
+      "bg-gray-500/10 opacity-60": row.is_rejected,
+      "ring-2 ring-primary": isSelected,
+    }
+  );
+
+  return (
+    <div
+      style={{
+        ...style,
+        // CRITICAL FIX: Allow container to grow for edit mode
+        height: isEditing ? 'auto' : style.height,
+        minHeight: style.height,
+        overflow: isEditing ? 'visible' : 'hidden',
+        zIndex: isEditing ? 10 : 1,
+        position: 'relative',
+        marginBottom: 0,
+        paddingBottom: 0,
+      }}
+      className={baseRowClass}
+    >
+      {/* Main Row */}
+      <div className="flex items-center px-6 py-1 hover:bg-background-hover cursor-pointer"
+        onClick={() => !isEditing && onToggleExpansion(row.row_number)}>
+
+        <div className="mr-4" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelection(row.row_number)}
+            disabled={row.is_rejected}
+            className="form-checkbox h-4 w-4 text-primary rounded focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        <div className="mr-4">
+          {isExpanded ? (
+            <ChevronDownIcon className="w-5 h-5 text-text-secondary" />
+          ) : (
+            <ChevronRightIcon className="w-5 h-5 text-text-secondary" />
+          )}
+        </div>
+
+        <div className="mr-4">
+          {row.is_rejected ? (
+            <RejectIcon className="w-5 h-5 text-gray-500" />
+          ) : row.is_valid ? (
+            <CheckCircleIcon className="w-5 h-5 text-green-500" />
+          ) : (
+            <XCircleIcon className="w-5 h-5 text-red-500" />
+          )}
+        </div>
+
+        <div className="w-16 text-sm font-medium text-text-secondary">
+          #{row.row_number}
+        </div>
+
+        <div className="flex-1 min-w-0 px-2">
+          <p className="text-sm font-medium text-text-main truncate">{row.customer}</p>
+        </div>
+
+        <div className="flex-1 min-w-0 px-2">
+          <p className="text-sm text-text-secondary truncate">{row.service}</p>
+        </div>
+
+        <div className="w-32 px-2">
+          <p className="text-sm text-text-secondary">{row.pickup_date}</p>
+        </div>
+
+        <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
+          {!row.is_rejected && !isEditing && (
+            <button
+              onClick={() => onStartEditing(row)}
+              className="p-1.5 rounded-lg hover:bg-primary/10 text-primary transition-colors"
+              title="Edit"
+            >
+              <PencilIcon className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={() => onRejectRow(row.row_number)}
+            className={clsx(
+              "p-1.5 rounded-lg transition-colors",
+              row.is_rejected
+                ? "bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                : "bg-red-500/10 text-red-600 hover:bg-red-500/20"
+            )}
+            title={row.is_rejected ? "Un-reject" : "Reject"}
+          >
+            {row.is_rejected ? (
+              <CheckIcon className="w-4 h-4" />
+            ) : (
+              <RejectIcon className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      {isExpanded && !isEditing && (
+        <div className="px-6 py-1 bg-background-hover/50 border-t border-border-color">
+          <div className="grid grid-cols-2 gap-1 text-xs leading-tight">
+            <div>
+              <span className="font-medium text-text-secondary">Customer:</span>
+              <span className="ml-2 text-text-main">{row.customer}</span>
+            </div>
+            {row.customer_reference_no && (
+              <div>
+                <span className="font-medium text-text-secondary">Customer Ref No:</span>
+                <span className="ml-2 text-text-main">{row.customer_reference_no}</span>
+              </div>
+            )}
+            {row.department_person_in_charge && (
+              <div>
+                <span className="font-medium text-text-secondary">Department/Person:</span>
+                <span className="ml-2 text-text-main">{row.department_person_in_charge}</span>
+              </div>
+            )}
+            <div>
+              <span className="font-medium text-text-secondary">Service:</span>
+              <span className="ml-2 text-text-main">{row.service}</span>
+            </div>
+            <div>
+              <span className="font-medium text-text-secondary">Vehicle:</span>
+              <span className="ml-2 text-text-main">{row.vehicle}</span>
+            </div>
+            <div>
+              <span className="font-medium text-text-secondary">Driver:</span>
+              <span className="ml-2 text-text-main">{row.driver}</span>
+            </div>
+            {row.vehicle_type && (
+              <div>
+                <span className="font-medium text-text-secondary">Vehicle Type:</span>
+                <span className="ml-2 text-text-main">{row.vehicle_type}</span>
+              </div>
+            )}
+            {row.contractor && (
+              <div>
+                <span className="font-medium text-text-secondary">Contractor:</span>
+                <span className="ml-2 text-text-main">{row.contractor}</span>
+              </div>
+            )}
+            <div>
+              <span className="font-medium text-text-secondary">Time:</span>
+              <span className="ml-2 text-text-main">{row.pickup_time}</span>
+            </div>
+            <div>
+              <span className="font-medium text-text-secondary">Passenger:</span>
+              <span className="ml-2 text-text-main">{row.passenger_name}</span>
+            </div>
+            {row.passenger_mobile && (
+              <div>
+                <span className="font-medium text-text-secondary">Passenger Mobile:</span>
+                <span className="ml-2 text-text-main">{row.passenger_mobile}</span>
+              </div>
+            )}
+            <div className="col-span-2">
+              <span className="font-medium text-text-secondary">Pickup:</span>
+              <span className="ml-2 text-text-main">{row.pickup_location}</span>
+            </div>
+            <div className="col-span-2">
+              <span className="font-medium text-text-secondary">Dropoff:</span>
+              <span className="ml-2 text-text-main">{row.dropoff_location}</span>
+            </div>
+            {row.remarks && (
+              <div className="col-span-2">
+                <span className="font-medium text-text-secondary">Remarks:</span>
+                <span className="ml-2 text-text-main">{row.remarks}</span>
+              </div>
+            )}
+            {!row.is_valid && row.error_message && (
+              <div className="col-span-2">
+                <div className="flex items-start space-x-2 text-red-600">
+                  <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <span className="text-sm">{row.error_message}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Mode */}
+      {isEditing && (
+        <EditForm
+          rowNumber={row.row_number}
+          editingDataRef={editingDataRef}
+          onCancelEditing={onCancelEditing}
+          onSaveEditing={onSaveEditing}
+          isValidating={isValidating}
+          referenceData={referenceData}
+          isLoadingReferenceData={isLoadingReferenceData}
+        />
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// EDIT FORM COMPONENT - WITH DROPDOWNS
+// ==========================================
+
+interface EditFormProps {
+  rowNumber: number;
+  editingDataRef: React.MutableRefObject<Record<number, ExcelRow>>;
+  onCancelEditing: () => void;
+  onSaveEditing: () => void;
+  isValidating: boolean;
+  referenceData: ReferenceData;
+  isLoadingReferenceData: boolean;
+}
+
+function EditForm({
+  rowNumber,
+  editingDataRef,
+  onCancelEditing,
+  onSaveEditing,
+  isValidating,
+  referenceData,
+  isLoadingReferenceData
+}: EditFormProps) {
+
+  const row = editingDataRef.current[rowNumber];
+
+  if (!row) return null;
+
+  const handleChange = (field: keyof ExcelRow, value: any) => {
+    editingDataRef.current[rowNumber] = {
+      ...editingDataRef.current[rowNumber],
+      [field]: value
+    };
+  };
+
+  const handleCustomerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const customerId = parseInt(e.target.value);
+    const customer = referenceData.customers.find(c => c.id === customerId);
+    if (customer) {
+      editingDataRef.current[rowNumber] = {
+        ...editingDataRef.current[rowNumber],
+        customer: customer.name,
+        customer_id: customer.id
+      };
+    }
+  };
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const serviceName = e.target.value;
+    const service = referenceData.services.find(s => s.name === serviceName);
+    if (service) {
+      editingDataRef.current[rowNumber] = {
+        ...editingDataRef.current[rowNumber],
+        service: service.name,
+        service_type: service.name
+      };
+    }
+  };
+
+  const handleVehicleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const vehicleId = parseInt(e.target.value);
+    const vehicle = referenceData.vehicles.find(v => v.id === vehicleId);
+    if (vehicle) {
+      editingDataRef.current[rowNumber] = {
+        ...editingDataRef.current[rowNumber],
+        vehicle: vehicle.number,
+        vehicle_id: vehicle.id,
+
+      };
+    }
+  };
+
+  const handleDriverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const driverId = parseInt(e.target.value);
+    const driver = referenceData.drivers.find(d => d.id === driverId);
+    if (driver) {
+      editingDataRef.current[rowNumber] = {
+        ...editingDataRef.current[rowNumber],
+        driver: driver.name,
+        driver_id: driver.id
+      };
+    }
+  };
+
+  const handleContractorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const contractorId = parseInt(e.target.value);
+    const contractor = referenceData.contractors.find(c => c.id === contractorId);
+    if (contractor) {
+      editingDataRef.current[rowNumber] = {
+        ...editingDataRef.current[rowNumber],
+        contractor: contractor.name,
+        contractor_id: contractor.id
+      };
+    }
+  };
+
+  const inputClassName = "w-full px-3 py-2 bg-transparent text-text-main border border-border-color rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder-text-secondary/50";
+  const selectClassName = "w-full px-3 py-2 bg-background-light text-text-main border border-border-color rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary";
+
+  const statusOptions = ['new', 'pending', 'confirmed', 'in_progress', 'completed', 'canceled'];
+
+  return (
+    <div className="px-6 py-4 bg-transparent border-t border-border-color">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          {/* Customer Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Customer *
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <select
+                defaultValue={row.customer_id || ''}
+                onChange={handleCustomerChange}
+                className={selectClassName}
+                required
+              >
+                <option value="">Select Customer</option>
+                {referenceData.customers.map(customer => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Customer Reference No */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Customer Reference No
+            </label>
+            <input
+              type="text"
+              defaultValue={row.customer_reference_no || ''}
+              onChange={(e) => handleChange('customer_reference_no', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter reference number"
+            />
+          </div>
+
+          {/* Department/Person In Charge */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Department/Person In Charge
+            </label>
+            <input
+              type="text"
+              defaultValue={row.department_person_in_charge || ''}
+              onChange={(e) => handleChange('department_person_in_charge', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter department or person in charge"
+            />
+          </div>
+
+          {/* Service Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Service *
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <select
+                defaultValue={row.service}
+                onChange={handleServiceChange}
+                className={selectClassName}
+                required
+              >
+                <option value="">Select Service</option>
+                {referenceData.services.map(service => (
+                  <option key={service.id} value={service.name}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Vehicle Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Vehicle *
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <>
+                <select
+                  defaultValue={row.vehicle_id || ""}
+                  onChange={(e) => {
+                    handleVehicleChange(e);
+                  }}
+                  className={selectClassName}
+                  required
+                >
+                  <option value="">Select Vehicle</option>
+                  {referenceData?.vehicles?.map((vehicle, index) => {
+                    return (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {vehicle.number}
+                      </option>
+                    );
+                  })}
+                </select>
+              </>
+            )}
+          </div>
+          {/* Driver Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Driver *
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <select
+                defaultValue={row.driver_id || ''}
+                onChange={handleDriverChange}
+                className={selectClassName}
+                required
+              >
+                <option value="">Select Driver</option>
+                {referenceData.drivers.map(driver => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Contractor Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Contractor
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  // If contractor_id exists, use it. Otherwise, try to find contractor by name
+                  let contractorValue = row.contractor_id;
+                  if (!contractorValue && row.contractor) {
+                    const foundContractor = referenceData.contractors.find(
+                      c => c.name.toLowerCase() === row.contractor.toLowerCase()
+                    );
+                    if (foundContractor) {
+                      contractorValue = foundContractor.id;
+                      // Update the ref with the found contractor_id
+                      editingDataRef.current[rowNumber] = {
+                        ...editingDataRef.current[rowNumber],
+                        contractor_id: foundContractor.id
+                      };
+                    }
+                  }
+                  console.log("👔 Contractor Data:", {
+                    contractor_id: row.contractor_id,
+                    contractor: row.contractor,
+                    resolvedValue: contractorValue,
+                    contractors: referenceData.contractors
+                  });
+                  return null;
+                })()}
+                <select
+                  key={`contractor-${row.contractor_id || row.contractor || 'none'}`}
+                  defaultValue={row.contractor_id || (() => {
+                    const foundContractor = referenceData.contractors.find(
+                      c => c.name.toLowerCase() === (row.contractor || '').toLowerCase()
+                    );
+                    return foundContractor?.id || '';
+                  })()}
+                  onChange={handleContractorChange}
+                  className={selectClassName}
+                >
+                  <option value="">Select Contractor</option>
+                  {referenceData.contractors.map(contractor => (
+                    <option key={contractor.id} value={contractor.id}>
+                      {contractor.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+
+          {/* Vehicle Type */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Vehicle Type
+            </label>
+            {isLoadingReferenceData ? (
+              <div className="w-full px-3 py-2 border border-border-color rounded-md">
+                <span className="text-text-secondary">Loading...</span>
+              </div>
+            ) : (
+              <>
+                {console.log("🚗 Vehicle Type Data:", {
+                  vehicle_type: row.vehicle_type,
+                  vehicle_types: referenceData.vehicle_types
+                })}
+                <select
+                  key={`vehicle-type-${row.vehicle_type || 'none'}`}
+                  defaultValue={row.vehicle_type || ""}
+                  onChange={(e) => {
+                    console.log("✅ Vehicle Type selected:", e.target.value);
+                    handleChange("vehicle_type", e.target.value);
+                  }}
+                  className={selectClassName}
+                >
+                  <option value="">Select Vehicle Type</option>
+                  {referenceData.vehicle_types?.map((type, index) => {
+                    return (
+                      <option key={type.id} value={type.name}>
+                        {type.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </>
+            )}
+          </div>
+
+
+          {/* Pickup Date */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Pickup Date *
+            </label>
+            <input
+              type="date"
+              defaultValue={row.pickup_date}
+              onChange={(e) => handleChange('pickup_date', e.target.value)}
+              className={inputClassName}
+              required
+            />
+          </div>
+
+          {/* Pickup Time */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Pickup Time *
+            </label>
+            <input
+              type="time"
+              defaultValue={row.pickup_time}
+              onChange={(e) => handleChange('pickup_time', e.target.value)}
+              className={inputClassName}
+              required
+            />
+          </div>
+
+          {/* Pickup Location */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Pickup Location *
+            </label>
+            <input
+              type="text"
+              defaultValue={row.pickup_location}
+              onChange={(e) => handleChange('pickup_location', e.target.value)}
+              className={inputClassName}
+              required
+            />
+          </div>
+
+          {/* Dropoff Location */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Dropoff Location *
+            </label>
+            <input
+              type="text"
+              defaultValue={row.dropoff_location}
+              onChange={(e) => handleChange('dropoff_location', e.target.value)}
+              className={inputClassName}
+              required
+            />
+          </div>
+
+          {/* Passenger Name */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Passenger Name
+            </label>
+            <input
+              type="text"
+              defaultValue={row.passenger_name}
+              onChange={(e) => handleChange('passenger_name', e.target.value)}
+              className={inputClassName}
+            />
+          </div>
+
+          {/* Passenger Mobile */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Passenger Mobile
+            </label>
+            <input
+              type="tel"
+              defaultValue={row.passenger_mobile || ''}
+              onChange={(e) => handleChange('passenger_mobile', e.target.value)}
+              className={inputClassName}
+              placeholder="Enter mobile number"
+            />
+          </div>
+
+          {/* Status Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Status
+            </label>
+            <select
+              defaultValue={row.status}
+              onChange={(e) => handleChange('status', e.target.value)}
+              className={selectClassName}
+            >
+              {statusOptions.map(status => (
+                <option key={status} value={status}>
+                  {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Remarks */}
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Remarks
+            </label>
+            <textarea
+              defaultValue={row.remarks}
+              onChange={(e) => handleChange('remarks', e.target.value)}
+              rows={3}
+              className={inputClassName}
+            />
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border-color">
+          <button
+            onClick={onCancelEditing}
+            disabled={isValidating}
+            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-main border border-border-color rounded-md hover:bg-background-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSaveEditing}
+            disabled={isValidating || isLoadingReferenceData}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+          >
+            {isValidating ? (
+              <>
+                <span className="animate-spin">⏳</span>
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <CheckIcon className="w-4 h-4" />
+                <span>Save Changes</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
