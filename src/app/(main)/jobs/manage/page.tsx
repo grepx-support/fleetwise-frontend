@@ -336,8 +336,8 @@ const ManageJobsPage = () => {
     Object.entries(debouncedFilters).every(([col, val]) =>
       !val || (job[col] !== undefined && job[col] !== null && job[col].toString().toLowerCase().includes(val.toLowerCase()))
     ) &&
-    (!search || job.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      job.id?.toString().toLowerCase().includes(search.toLowerCase()))
+    (!search || (job.customer_name?.toLowerCase() ?? '').includes(search.toLowerCase()) ||
+      (job.id?.toString()?.toLowerCase() ?? '').includes(search.toLowerCase()))
   );
 
   // Sort jobs
