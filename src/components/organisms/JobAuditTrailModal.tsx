@@ -22,12 +22,65 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set()); // Track failed images
+  const [imageBlobUrls, setImageBlobUrls] = useState<Record<string, string>>({}); // Track blob URLs for authenticated images
 
   useEffect(() => {
     if (isOpen && jobId) {
       loadAuditTrail();
     }
   }, [isOpen, jobId]);
+
+  // Fetch images with authentication if needed
+  useEffect(() => {
+    const fetchAuthenticatedImages = async () => {
+      auditRecords.forEach(record => {
+        record.attachments?.forEach(async (attachment: { file_url: string } | string) => {
+          // Extract URL from attachment
+          const url = typeof attachment === 'string' ? attachment : attachment.file_url;
+          
+          // Skip if already processed or if it's a public URL
+          if (imageBlobUrls[url] || failedImages.has(url)) {
+            return;
+          }
+          
+          // Check if URL might require authentication (relative URLs or same domain)
+          const isRelativeUrl = url.startsWith('/');
+          const isSameDomain = url.startsWith(window.location.origin);
+          
+          // Only fetch with credentials if it's likely to need authentication
+          if (isRelativeUrl || isSameDomain) {
+            try {
+              const response = await fetch(url, {
+                credentials: 'include' // Include cookies/session
+              });
+              if (response.ok) {
+                const blob = await response.blob();
+                setImageBlobUrls(prev => ({...prev, [url]: URL.createObjectURL(blob)}));
+              } else {
+                // If not authorized, mark as failed
+                setFailedImages(prev => new Set(prev).add(url));
+              }
+            } catch (error) {
+              console.error('Error fetching authenticated image:', error);
+              setFailedImages(prev => new Set(prev).add(url));
+            }
+          }
+        });
+      });
+    };
+
+    if (auditRecords.length > 0) {
+      fetchAuthenticatedImages();
+    }
+
+    // Cleanup blob URLs when component unmounts or imageBlobUrls change
+    return () => {
+      Object.keys(imageBlobUrls).forEach(url => {
+        URL.revokeObjectURL(imageBlobUrls[url]);
+      });
+    };
+  }, [auditRecords, imageBlobUrls]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -79,26 +132,16 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
     try {
       const response = await getJobAuditTrail(jobId);
 
-      console.log('Audit trail response:', response);
-
-      // ✅ Normalize attachments to be array of URLs (instead of array of objects)
       const normalizedRecords = (response.audit_records || []).map(record => {
-        console.log('Processing record:', record);
         const normalizedAttachments = record.attachments
-          ? record.attachments
-              .map((att: any) => {
-                console.log('Processing attachment:', att);
-                return typeof att === 'string' ? att : att.file_url;
-              })
-              .filter((url: string) => {
-                // Filter out empty or invalid URLs
-                const isValid = url && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/'));
-                console.log('Validating URL:', url, 'isValid:', isValid);
-                return isValid;
-              })
-          : [];
-        
-        console.log('Normalized attachments for record:', normalizedAttachments);
+          ?.map((att) => {
+            if (typeof att === 'string') {
+              return att;
+            }
+            return att.file_url;
+          })
+          .filter((url: string | undefined): url is string => Boolean(url?.trim()))
+          || [];
         
         return {
           ...record,
@@ -106,12 +149,11 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
         };
       });
 
-      // Debug check
-      normalizedRecords.forEach((rec, i) => {
-        console.log(`Record ${i} normalized attachments:`, rec.attachments);
+      const sortedRecords = [...normalizedRecords].sort((a, b) => {
+        return a.id - b.id;
       });
 
-      setAuditRecords(normalizedRecords);
+      setAuditRecords(sortedRecords);
       setDriverInfo(response.driver_info || null);
     } catch (error) {
       console.error('Error loading audit trail:', error);
@@ -126,22 +168,12 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
   // Handle image loading errors
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const target = e.target as HTMLImageElement;
-    console.log('Image failed to load:', target.src);
-    // Find the parent container and show a placeholder
-    const parent = target.parentElement;
-    if (parent) {
-      parent.innerHTML = `
-        <div class="w-full h-full flex flex-col items-center justify-center bg-gray-800 text-gray-500 text-xs p-2 text-center">
-          <div>Image not available</div>
-          <div class="text-xs mt-1 text-gray-600 truncate w-full">${target.src.substring(target.src.lastIndexOf('/') + 1)}</div>
-        </div>
-      `;
-    }
+    const imageUrl = target.src;
+    setFailedImages(prev => new Set(prev).add(imageUrl));
   };
 
   // Open image in modal
   const openImage = (imageUrl: string) => {
-    console.log('Opening image:', imageUrl);
     setSelectedImage(imageUrl);
   };
 
@@ -149,6 +181,13 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
   const closeImage = () => {
     setSelectedImage(null);
   };
+
+  // Reset image modal state when parent modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedImage(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -199,93 +238,126 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
                 {/* Timeline line */}
                 <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-700 transform translate-x-1/2"></div>
                 
-                {auditRecords.map((record, index) => (
-                  <div key={record.id} className="relative flex gap-4 pb-8">
-                    {/* Avatar */}
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white ${getAvatarColor(record.role)}`}>
-                      <UserIcon className="w-5 h-5" />
-                    </div>
-                    
-                    {/* Name, Role, and Timestamp in one line outside the card */}
-                    <div className="flex-1">
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="font-semibold text-white">
-                          {record.changed_by_name || record.changed_by_email || 'Unknown User'}
-                        </span>
-                        {record.role && (
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(record.role)}`}>
-                            {record.role}
-                          </span>
-                        )}
-                        <div className="flex items-center gap-1 text-sm text-gray-400">
-                          <CalendarIcon className="w-4 h-4" />
-                          <span>{formatDate(record.changed_at)}</span>
-                        </div>
+                {auditRecords.map((record, index) => {
+                  return (
+                    <div key={record.id} className="relative flex gap-4 pb-8">
+                      {/* Avatar */}
+                      <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white ${getAvatarColor(record.role)}`}>
+                        <UserIcon className="w-5 h-5" />
                       </div>
                       
-                      {/* Card */}
-                      <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-sm p-4">
-                        <p className="text-gray-200 mb-3">{record.description || 'No description provided'}</p>
-                        
-                        {record.new_status && (
-                          <div className="mb-3">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(record.new_status)}`}>
-                              {record.new_status}
+                      {/* Name, Role, and Timestamp in one line outside the card */}
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="font-semibold text-white">
+                            {record.changed_by_name || record.changed_by_email || 'Unknown User'}
+                          </span>
+                          {record.role && (
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(record.role)}`}>
+                              {record.role}
                             </span>
+                          )}
+                          <div className="flex items-center gap-1 text-sm text-gray-400">
+                            <CalendarIcon className="w-4 h-4" />
+                            <span>{formatDate(record.changed_at)}</span>
                           </div>
-                        )}
+                        </div>
                         
-                        {record.attachments && record.attachments.length > 0 && (
-                          <div className="border-t border-gray-700 pt-3 mt-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <ImageIcon className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm font-medium text-gray-300">
-                                {record.attachments.length} image{record.attachments.length > 1 ? 's' : ''} uploaded for this stage
+                        {/* Card */}
+                        <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-sm p-4">
+                          <p className="text-gray-200 mb-3">{record.description || 'No description provided'}</p>
+                          
+                          {record.new_status && (
+                            <div className="mb-3">
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(record.new_status)}`}>
+                                {record.new_status}
                               </span>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                              {record.attachments.slice(0, 4).map((attachment, idx) => {
-                                console.log('Rendering attachment:', attachment);
-                                // Check if the attachment URL is valid
-                                const isValidUrl = attachment && (attachment.startsWith('http') || attachment.startsWith('/'));
-                                console.log('Is valid URL:', isValidUrl);
-                                
-                                if (!isValidUrl) {
+                          )}
+                          
+                          {/* Show customer remark when status is confirmed (from new or pending) */}
+                          {record.new_status?.toLowerCase() === 'confirmed' && 
+                           (record.old_status?.toLowerCase() === 'new' || record.old_status?.toLowerCase() === 'pending') && 
+                           record.remark && (
+                            <div className="mb-3 p-3 bg-blue-900/50 rounded-lg border border-blue-700">
+                              <div className="text-sm font-medium text-blue-300 mb-1">Customer Remark</div>
+                              <div className="text-gray-200">{record.remark}</div>
+                            </div>
+                          )}
+                          
+                          {/* Show driver remark for other stages */}
+                          {((record.new_status?.toLowerCase() !== 'confirmed') || 
+                            (record.new_status?.toLowerCase() === 'confirmed' && 
+                             record.old_status?.toLowerCase() !== 'new' && 
+                             record.old_status?.toLowerCase() !== 'pending')) && 
+                           record.remark && (
+                            <div className="mb-3 p-3 bg-green-900/50 rounded-lg border border-green-700">
+                              <div className="text-sm font-medium text-green-300 mb-1">Driver Remark</div>
+                              <div className="text-gray-200">{record.remark}</div>
+                            </div>
+                          )}
+                          
+                          {record.attachments && record.attachments.length > 0 && (
+                            <div className="border-t border-gray-700 pt-3 mt-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <ImageIcon className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-300">
+                                  {record.attachments.length} image{record.attachments.length > 1 ? 's' : ''} uploaded for this stage
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {record.attachments.slice(0, 4).map((attachment, idx) => {
+                                  // Extract URL from attachment (can be string or object)
+                                  const attachmentUrl = typeof attachment === 'string' ? attachment : attachment.file_url;
+                                  
+                                  // Check if the attachment URL is valid
+                                  const isValidUrl = attachmentUrl && (attachmentUrl.startsWith('http') || attachmentUrl.startsWith('/'));
+                                  
+                                  if (!isValidUrl) {
+                                    return (
+                                      <div key={idx} className="w-32 h-20 rounded border border-gray-700 overflow-hidden bg-gray-900 flex items-center justify-center">
+                                        <div className="text-gray-500 text-xs text-center p-2">Invalid URL</div>
+                                      </div>
+                                    );
+                                  }
+                                  
                                   return (
-                                    <div key={idx} className="w-32 h-20 rounded border border-gray-700 overflow-hidden bg-gray-900 flex items-center justify-center">
-                                      <div className="text-gray-500 text-xs text-center p-2">Invalid URL</div>
+                                    <div 
+                                      key={idx} 
+                                      className="w-32 h-20 rounded border border-gray-700 overflow-hidden bg-gray-900 cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={() => openImage(attachmentUrl)}
+                                    >
+                                      {!failedImages.has(attachmentUrl) ? (
+                                        <img 
+                                          src={imageBlobUrls[attachmentUrl] || attachmentUrl} 
+                                          alt={`Attachment ${idx + 1}`} 
+                                          className="w-full h-full object-cover"
+                                          onError={handleImageError}
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800 text-gray-500 text-xs p-2 text-center">
+                                          <div>Image not available</div>
+                                          <div className="text-xs mt-1 text-gray-600 truncate w-full">
+                                            {attachmentUrl.substring(attachmentUrl.lastIndexOf('/') + 1)}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
-                                }
-                                
-                                return (
-                                  <div 
-                                    key={idx} 
-                                    className="w-32 h-20 rounded border border-gray-700 overflow-hidden bg-gray-900 cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => openImage(attachment)}
-                                  >
-                                    <img 
-                                      src={attachment} 
-                                      alt={`Attachment ${idx + 1}`} 
-                                      className="w-full h-full object-cover"
-                                      onError={handleImageError}
-                                      onLoad={(e) => console.log(`Image loaded: ${attachment}`)}
-                                    />
+                                })}
+                                {record.attachments.length > 4 && (
+                                  <div className="w-32 h-20 rounded border border-gray-700 bg-gray-900 flex items-center justify-center">
+                                    <span className="text-gray-400 text-sm">+{record.attachments.length - 4}</span>
                                   </div>
-                                );
-                              })}
-                              {record.attachments.length > 4 && (
-                                <div className="w-32 h-20 rounded border border-gray-700 bg-gray-900 flex items-center justify-center">
-                                  <span className="text-gray-400 text-sm">+{record.attachments.length - 4}</span>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -318,7 +390,7 @@ const JobAuditTrailModal: React.FC<JobAuditTrailModalProps> = ({ jobId, isOpen, 
               <XIcon className="w-8 h-8" />
             </button>
             <img 
-              src={selectedImage} 
+              src={imageBlobUrls[selectedImage] || selectedImage} 
               alt="Full size view" 
               className="max-w-full max-h-[80vh] object-contain"
               onClick={(e) => e.stopPropagation()}

@@ -25,6 +25,7 @@ export interface AuditRecord {
   attachments?: { file_url: string }[] | string[];
   changed_by_name?: string;
   role?: 'Admin' | 'Driver' | 'Customer';
+  remark?: string; 
 }
 
 export interface DriverInfo {
