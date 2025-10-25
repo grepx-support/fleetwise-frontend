@@ -125,6 +125,9 @@ export default function ExcelUploadTable({
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
+  // Filter state
+  const [showInvalidOnly, setShowInvalidOnly] = useState(false);
+
   // Reference data state
   const [referenceData, setReferenceData] = useState<ReferenceData>({
     customers: [],
@@ -252,13 +255,6 @@ export default function ExcelUploadTable({
     }
   }, [selectedRows, data]);
 
-  const startEditing = useCallback((row: ExcelRow) => {
-    // Store the original data for this row
-    editingDataRef.current[row.row_number] = { ...row };
-
-    // Set editing row
-    setEditingRow(row.row_number);
-  }, []);
 
   const cancelEditing = useCallback(() => {
     if (editingRow) {
@@ -361,10 +357,38 @@ export default function ExcelUploadTable({
   const hasSelection = selectedRows.size > 0;
   const uploadableCount = hasSelection ? selectedValidCount : validCount;
 
-  const sortedData = useMemo(() => {
-    if (!sortConfig) return data;
+  // Sync selections when data changes - remove invalid rows from selection
+  useEffect(() => {
+    if (selectedRows.size > 0) {
+      // Get set of valid row numbers
+      const validRowNumbers = new Set(
+        data.filter(r => r.is_valid && !r.is_rejected).map(r => r.row_number)
+      );
 
-    return [...data].sort((a, b) => {
+      // Check if any selected rows are now invalid
+      const updatedSelection = new Set(
+        Array.from(selectedRows).filter(num => validRowNumbers.has(num))
+      );
+
+      // Only update if the selection has changed
+      if (updatedSelection.size !== selectedRows.size) {
+        setSelectedRows(updatedSelection);
+      }
+    }
+  }, [data, selectedRows]);
+
+  // Filter data based on showInvalidOnly flag
+  const filteredData = useMemo(() => {
+    if (showInvalidOnly) {
+      return data.filter(row => !row.is_valid && !row.is_rejected);
+    }
+    return data;
+  }, [data, showInvalidOnly]);
+
+  const sortedData = useMemo(() => {
+    if (!sortConfig) return filteredData;
+
+    return [...filteredData].sort((a, b) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
 
@@ -373,7 +397,7 @@ export default function ExcelUploadTable({
       const comparison = aValue < bValue ? -1 : 1;
       return sortConfig.direction === 'asc' ? comparison : -comparison;
     });
-  }, [data, sortConfig]);
+  }, [filteredData, sortConfig]);
 
   useEffect(() => {
     if (onSelectionChange) {
@@ -388,6 +412,26 @@ export default function ExcelUploadTable({
   const endIndex = startIndex + rowsPerPage;
   const paginatedData = sortedData.slice(startIndex, endIndex);
 
+  // Start editing with auto-navigation to correct page
+  const startEditing = useCallback((row: ExcelRow) => {
+    // Find the row's position in sorted data to determine correct page
+    const rowIndex = sortedData.findIndex(r => r.row_number === row.row_number);
+    if (rowIndex === -1) return; // Row not found, bail out
+
+    const targetPage = Math.floor(rowIndex / rowsPerPage) + 1;
+
+    // If row is on a different page, navigate to it first
+    if (targetPage !== currentPage) {
+      setCurrentPage(targetPage);
+    }
+
+    // Store the original data for this row
+    editingDataRef.current[row.row_number] = { ...row };
+
+    // Set editing row
+    setEditingRow(row.row_number);
+  }, [sortedData, rowsPerPage, currentPage]);
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     // Collapse all rows when changing pages
@@ -399,6 +443,22 @@ export default function ExcelUploadTable({
     setRowsPerPage(rows);
     setCurrentPage(1); // Reset to first page
   };
+
+  const toggleInvalidFilter = useCallback(() => {
+    setShowInvalidOnly(prev => !prev);
+    setCurrentPage(1); // Reset to first page when toggling filter
+  }, []);
+
+  // Clear edit state if current row not in paginated view (prevents cross-page state leakage)
+  useEffect(() => {
+    if (editingRow !== null) {
+      const isRowVisible = paginatedData.some(r => r.row_number === editingRow);
+      if (!isRowVisible) {
+        setEditingRow(null);
+        delete editingDataRef.current[editingRow];
+      }
+    }
+  }, [paginatedData, editingRow]);
 
   if (isLoading) {
     return (
@@ -475,6 +535,18 @@ export default function ExcelUploadTable({
       <div className="px-6 py-3 bg-background-hover border-b border-border-color flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <button
+            onClick={toggleInvalidFilter}
+            className={clsx(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center space-x-1",
+              showInvalidOnly
+                ? "text-white bg-red-600 hover:bg-red-700 border border-red-600"
+                : "text-red-600 hover:text-red-700 border border-red-600/30 hover:bg-red-50"
+            )}
+          >
+            <ExclamationTriangleIcon className="w-4 h-4" />
+            <span>{showInvalidOnly ? `Showing ${errorCount} Invalid` : 'Show Invalid Only'}</span>
+          </button>
+          <button
             onClick={selectAllValid}
             className="px-3 py-1.5 text-xs font-medium text-primary hover:text-primary-dark border border-primary/30 rounded-md hover:bg-primary/10 transition-colors"
           >
@@ -505,35 +577,62 @@ export default function ExcelUploadTable({
           )}
         </div>
 
-        {selectedRows.size > 0 && (
+        {selectedRows.size > 0 ? (
           <div className="text-sm text-text-secondary">
             <span className="font-medium text-primary">{selectedValidCount}</span> of{' '}
             <span className="font-medium">{selectedRows.size}</span> selected rows are valid
           </div>
-        )}
+        ) : showInvalidOnly && errorCount > 0 ? (
+          <div className="text-sm text-red-600 font-medium">
+            Showing {sortedData.length} invalid row(s)
+          </div>
+        ) : null}
       </div>
 
       {/* Paginated Table */}
       <div className="overflow-auto" style={{ maxHeight: '600px' }}>
-        {paginatedData.map((row) => (
-          <RowItem
-            key={row.row_number}
-            row={row}
-            isExpanded={expandedRows.has(row.row_number)}
-            isEditing={editingRow === row.row_number}
-            isSelected={selectedRows.has(row.row_number)}
-            onToggleExpansion={toggleRowExpansion}
-            onToggleSelection={toggleRowSelection}
-            onStartEditing={startEditing}
-            onCancelEditing={cancelEditing}
-            onSaveEditing={saveEditing}
-            onRejectRow={rejectRow}
-            editingDataRef={editingDataRef}
-            isValidating={isValidating}
-            referenceData={referenceData}
-            isLoadingReferenceData={isLoadingReferenceData}
-          />
-        ))}
+        {paginatedData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 px-6">
+            <CheckCircleIcon className="w-16 h-16 text-green-500 mb-4" />
+            <h3 className="text-lg font-semibold text-text-main mb-2">
+              {showInvalidOnly ? 'No Invalid Rows!' : 'No Data'}
+            </h3>
+            <p className="text-sm text-text-secondary text-center">
+              {showInvalidOnly
+                ? 'All rows are valid and ready for upload. Click "Show Invalid Only" to view all rows.'
+                : 'No rows to display.'
+              }
+            </p>
+            {showInvalidOnly && (
+              <button
+                onClick={toggleInvalidFilter}
+                className="mt-4 px-4 py-2 text-sm font-medium text-primary hover:text-primary-dark border border-primary/30 rounded-md hover:bg-primary/10 transition-colors"
+              >
+                Show All Rows
+              </button>
+            )}
+          </div>
+        ) : (
+          paginatedData.map((row) => (
+            <RowItem
+              key={row.row_number}
+              row={row}
+              isExpanded={expandedRows.has(row.row_number)}
+              isEditing={editingRow === row.row_number}
+              isSelected={selectedRows.has(row.row_number)}
+              onToggleExpansion={toggleRowExpansion}
+              onToggleSelection={toggleRowSelection}
+              onStartEditing={startEditing}
+              onCancelEditing={cancelEditing}
+              onSaveEditing={saveEditing}
+              onRejectRow={rejectRow}
+              editingDataRef={editingDataRef}
+              isValidating={isValidating}
+              referenceData={referenceData}
+              isLoadingReferenceData={isLoadingReferenceData}
+            />
+          ))
+        )}
       </div>
 
       {/* Pagination Controls */}
@@ -924,14 +1023,85 @@ function EditForm({
 }: EditFormProps) {
 
   const row = editingDataRef.current[rowNumber];
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   if (!row) return null;
+
+  const validateField = useCallback((field: string, value: any) => {
+    const errors: Record<string, string> = { ...validationErrors };
+
+    switch(field) {
+      case 'customer_id':
+      case 'customer':
+        if (!value) {
+          errors.customer = 'Customer is required';
+        } else {
+          delete errors.customer;
+        }
+        break;
+      case 'service':
+        if (!value) {
+          errors.service = 'Service is required';
+        } else {
+          delete errors.service;
+        }
+        break;
+      case 'vehicle_id':
+      case 'vehicle':
+        if (!value) {
+          errors.vehicle = 'Vehicle is required';
+        } else {
+          delete errors.vehicle;
+        }
+        break;
+      case 'driver_id':
+      case 'driver':
+        if (!value) {
+          errors.driver = 'Driver is required';
+        } else {
+          delete errors.driver;
+        }
+        break;
+      case 'pickup_date':
+        if (!value) {
+          errors.pickup_date = 'Pickup date is required';
+        } else {
+          delete errors.pickup_date;
+        }
+        break;
+      case 'pickup_time':
+        if (!value) {
+          errors.pickup_time = 'Pickup time is required';
+        } else {
+          delete errors.pickup_time;
+        }
+        break;
+      case 'pickup_location':
+        if (!value) {
+          errors.pickup_location = 'Pickup location is required';
+        } else {
+          delete errors.pickup_location;
+        }
+        break;
+      case 'dropoff_location':
+        if (!value) {
+          errors.dropoff_location = 'Dropoff location is required';
+        } else {
+          delete errors.dropoff_location;
+        }
+        break;
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  }, [validationErrors]);
 
   const handleChange = (field: keyof ExcelRow, value: any) => {
     editingDataRef.current[rowNumber] = {
       ...editingDataRef.current[rowNumber],
       [field]: value
     };
+    validateField(field, value);
   };
 
   const handleCustomerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -943,6 +1113,9 @@ function EditForm({
         customer: customer.name,
         customer_id: customer.id
       };
+      validateField('customer_id', customer.id);
+    } else {
+      validateField('customer_id', '');
     }
   };
 
@@ -955,6 +1128,9 @@ function EditForm({
         service: service.name,
         service_type: service.name
       };
+      validateField('service', service.name);
+    } else {
+      validateField('service', '');
     }
   };
 
@@ -968,6 +1144,9 @@ function EditForm({
         vehicle_id: vehicle.id,
 
       };
+      validateField('vehicle_id', vehicle.id);
+    } else {
+      validateField('vehicle_id', '');
     }
   };
 
@@ -980,6 +1159,9 @@ function EditForm({
         driver: driver.name,
         driver_id: driver.id
       };
+      validateField('driver_id', driver.id);
+    } else {
+      validateField('driver_id', '');
     }
   };
 
@@ -1012,19 +1194,24 @@ function EditForm({
                 <span className="text-text-secondary">Loading...</span>
               </div>
             ) : (
-              <select
-                defaultValue={row.customer_id || ''}
-                onChange={handleCustomerChange}
-                className={selectClassName}
-                required
-              >
-                <option value="">Select Customer</option>
-                {referenceData.customers.map(customer => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  defaultValue={row.customer_id || ''}
+                  onChange={handleCustomerChange}
+                  className={clsx(selectClassName, validationErrors.customer && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
+                  required
+                >
+                  <option value="">Select Customer</option>
+                  {referenceData.customers.map(customer => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+                {validationErrors.customer && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.customer}</p>
+                )}
+              </>
             )}
           </div>
 
@@ -1066,19 +1253,24 @@ function EditForm({
                 <span className="text-text-secondary">Loading...</span>
               </div>
             ) : (
-              <select
-                defaultValue={row.service}
-                onChange={handleServiceChange}
-                className={selectClassName}
-                required
-              >
-                <option value="">Select Service</option>
-                {referenceData.services.map(service => (
-                  <option key={service.id} value={service.name}>
-                    {service.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  defaultValue={row.service}
+                  onChange={handleServiceChange}
+                  className={clsx(selectClassName, validationErrors.service && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
+                  required
+                >
+                  <option value="">Select Service</option>
+                  {referenceData.services.map(service => (
+                    <option key={service.id} value={service.name}>
+                      {service.name}
+                    </option>
+                  ))}
+                </select>
+                {validationErrors.service && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.service}</p>
+                )}
+              </>
             )}
           </div>
 
@@ -1098,7 +1290,7 @@ function EditForm({
                   onChange={(e) => {
                     handleVehicleChange(e);
                   }}
-                  className={selectClassName}
+                  className={clsx(selectClassName, validationErrors.vehicle && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
                   required
                 >
                   <option value="">Select Vehicle</option>
@@ -1110,6 +1302,9 @@ function EditForm({
                     );
                   })}
                 </select>
+                {validationErrors.vehicle && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.vehicle}</p>
+                )}
               </>
             )}
           </div>
@@ -1123,19 +1318,24 @@ function EditForm({
                 <span className="text-text-secondary">Loading...</span>
               </div>
             ) : (
-              <select
-                defaultValue={row.driver_id || ''}
-                onChange={handleDriverChange}
-                className={selectClassName}
-                required
-              >
-                <option value="">Select Driver</option>
-                {referenceData.drivers.map(driver => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  defaultValue={row.driver_id || ''}
+                  onChange={handleDriverChange}
+                  className={clsx(selectClassName, validationErrors.driver && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
+                  required
+                >
+                  <option value="">Select Driver</option>
+                  {referenceData.drivers.map(driver => (
+                    <option key={driver.id} value={driver.id}>
+                      {driver.name}
+                    </option>
+                  ))}
+                </select>
+                {validationErrors.driver && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.driver}</p>
+                )}
+              </>
             )}
           </div>
 
@@ -1243,9 +1443,12 @@ function EditForm({
               type="date"
               defaultValue={row.pickup_date}
               onChange={(e) => handleChange('pickup_date', e.target.value)}
-              className={inputClassName}
+              className={clsx(inputClassName, validationErrors.pickup_date && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
               required
             />
+            {validationErrors.pickup_date && (
+              <p className="text-xs text-red-500 mt-1">{validationErrors.pickup_date}</p>
+            )}
           </div>
 
           {/* Pickup Time */}
@@ -1257,9 +1460,12 @@ function EditForm({
               type="time"
               defaultValue={row.pickup_time}
               onChange={(e) => handleChange('pickup_time', e.target.value)}
-              className={inputClassName}
+              className={clsx(inputClassName, validationErrors.pickup_time && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
               required
             />
+            {validationErrors.pickup_time && (
+              <p className="text-xs text-red-500 mt-1">{validationErrors.pickup_time}</p>
+            )}
           </div>
 
           {/* Pickup Location */}
@@ -1271,9 +1477,12 @@ function EditForm({
               type="text"
               defaultValue={row.pickup_location}
               onChange={(e) => handleChange('pickup_location', e.target.value)}
-              className={inputClassName}
+              className={clsx(inputClassName, validationErrors.pickup_location && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
               required
             />
+            {validationErrors.pickup_location && (
+              <p className="text-xs text-red-500 mt-1">{validationErrors.pickup_location}</p>
+            )}
           </div>
 
           {/* Dropoff Location */}
@@ -1285,9 +1494,12 @@ function EditForm({
               type="text"
               defaultValue={row.dropoff_location}
               onChange={(e) => handleChange('dropoff_location', e.target.value)}
-              className={inputClassName}
+              className={clsx(inputClassName, validationErrors.dropoff_location && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
               required
             />
+            {validationErrors.dropoff_location && (
+              <p className="text-xs text-red-500 mt-1">{validationErrors.dropoff_location}</p>
+            )}
           </div>
 
           {/* Passenger Name */}

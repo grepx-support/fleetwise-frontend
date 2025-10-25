@@ -32,6 +32,7 @@ export default function BulkUploadPage() {
   const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
   const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
   const [selectedValidCount, setSelectedValidCount] = useState(0);
+  const [uploadRequestId, setUploadRequestId] = useState<string | null>(null);
 
   // Download template
   const handleDownloadTemplate = async () => {
@@ -157,11 +158,17 @@ export default function BulkUploadPage() {
     setSelectedValidCount(validCount);
   }, []);
 
-  // Confirm upload with improved selection handling
+  // Confirm upload with improved selection handling and race condition guard
   const handleConfirmUpload = async () => {
+    // Guard at function entry - prevent duplicate submissions
+    if (isProcessing || uploadRequestId !== null) return;
     if (!previewData || (selectedValidCount === 0 && previewData.valid_count === 0)) return;
 
+    // Generate unique request ID for deduplication
+    const requestId = crypto.randomUUID();
+    setUploadRequestId(requestId);
     setIsProcessing(true);
+
     try {
       let rowsToUpload: ExcelRow[];
 
@@ -191,19 +198,33 @@ export default function BulkUploadPage() {
       if (result.processed_count > 0) {
         // Update rows with job IDs if available
         if (result.created_jobs && result.created_jobs.length > 0) {
-          // Update the preview data rows with job IDs
-          const updatedRows = previewData.rows.map(row => {
-            const createdJob = result.created_jobs?.find(job => job.row_number === row.row_number);
-            if (createdJob) {
-              return { ...row, job_id: createdJob.job_id };
-            }
-            return row;
-          });
+          try {
+            // Update the preview data rows with job IDs
+            const updatedRows = previewData.rows.map(row => {
+              const createdJob = result.created_jobs?.find(
+                job => job.row_number === row.row_number
+              );
+              return createdJob ? { ...row, job_id: createdJob.job_id } : row;
+            });
 
-          setPreviewData({
-            ...previewData,
-            rows: updatedRows
-          });
+            setPreviewData({
+              ...previewData,
+              rows: updatedRows
+            });
+
+            // Persist job IDs in sessionStorage for reference across refreshes
+            try {
+              sessionStorage.setItem('last_upload_jobs', JSON.stringify(result.created_jobs));
+              sessionStorage.setItem('last_upload_timestamp', new Date().toISOString());
+            } catch (storageError) {
+              console.error('Failed to persist job IDs to sessionStorage:', storageError);
+              // Don't fail the upload, but log for debugging
+            }
+          } catch (error) {
+            console.error('Failed to update preview with job IDs:', error);
+            // Don't fail the upload, but log for debugging
+            toast.error('Jobs created successfully, but failed to update UI with job IDs. Please refresh to see updated data.');
+          }
         }
 
         // Some jobs were processed successfully
@@ -234,6 +255,7 @@ export default function BulkUploadPage() {
       toast.error(error instanceof Error ? error.message : 'Upload confirmation failed');
     } finally {
       setIsProcessing(false);
+      setUploadRequestId(null);
     }
   };
 
@@ -244,6 +266,7 @@ export default function BulkUploadPage() {
     setUploadStep('upload');
     setSelectedRowNumbers([]);
     setSelectedValidCount(0);
+    setUploadRequestId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -447,7 +470,7 @@ export default function BulkUploadPage() {
                   {(previewData.valid_count > 0 || selectedValidCount > 0) && (
                     <button
                       onClick={handleConfirmUpload}
-                      disabled={isProcessing || (selectedRowNumbers.length > 0 && selectedValidCount === 0)}
+                      disabled={isProcessing || uploadRequestId !== null || (selectedRowNumbers.length > 0 && selectedValidCount === 0)}
                       className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
                         backgroundColor: (selectedRowNumbers.length > 0 && selectedValidCount === 0)
