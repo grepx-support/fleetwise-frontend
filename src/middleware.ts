@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { roleAccessRules } from "@/config/roleAccess"; 
+import { roleAccessRules } from "@/config/roleAccess";
 
-
-function isBlocked(role: string, path: string) {
+function isBlocked(role: string, path: string): boolean {
   const rules = roleAccessRules[role] || roleAccessRules["guest"];
-  return rules.some(pattern =>
+  return rules.some((pattern) =>
     pattern.endsWith("/*")
       ? path.startsWith(pattern.replace("/*", ""))
       : path.startsWith(pattern)
@@ -14,19 +12,43 @@ function isBlocked(role: string, path: string) {
 }
 
 export async function middleware(req: NextRequest) {
-  const cookieStore = await cookies(); 
+  const sessionCookie = req.cookies.get("session");
+  if (!sessionCookie) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
 
-  const role = cookieStore.get("fw_role")?.value ?? "guest";
-  const email = cookieStore.get("fw_email")?.value ?? "unknown";
-  const userId = cookieStore.get("fw_uid")?.value ?? "0";
+  let role = "guest";
+  try {
+    const res = await fetch(`${req.nextUrl.origin}/api/auth/me`, {
+      credentials: "include", // ensures HttpOnly cookie is sent
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: req.headers.get("cookie") ?? "", // forward cookies to backend
+      },
+    });
 
-  console.log("🔥 MIDDLEWARE");
-  console.log("Role:", role);
-  console.log("Email:", email);
-  console.log("UserID:", userId);
+    if (res.ok) {
+      const data = await res.json();
+      const userData = data.response?.user || data.user || data || null;
+      const roles = userData?.roles || [];
 
+      if (Array.isArray(roles) && roles.length > 0) {
+        const primaryRole =
+          typeof roles[0] === "string"
+            ? roles[0]
+            : roles[0]?.name || roles[0]?.role || "guest";
+        role = primaryRole.toLowerCase();
+      }
+    } else if (res.status === 401) {
+      // Unauthenticated or expired session
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+  } catch (err) {
+    console.error("❌ Error verifying user role in middleware:", err);
+    // fallback to guest if backend temporarily unreachable
+    role = "guest";
+  }
   const path = req.nextUrl.pathname;
-
   if (isBlocked(role, path)) {
     const url = req.nextUrl.clone();
     url.pathname = "/not-authorized";
@@ -38,14 +60,21 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/billing/:path*",
-    "/customers/:path*",
-    "/contractors/:path*",
-    "/drivers/:path*",
-    "/vehicles/:path*",
-    "/vehicle-types/:path*",
-    "/general-settings",
-    "/jobs/manage",
-    "/jobs/audit-trail"
-  ]
+    "/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg)|login|register|public).*)",
+  ],
 };
+
+
+// export const config = {
+//   matcher: [
+//     "/billing/:path*",
+//     "/customers/:path*",
+//     "/contractors/:path*",
+//     "/drivers/:path*",
+//     "/vehicles/:path*",
+//     "/vehicle-types/:path*",
+//     "/general-settings",
+//     "/jobs/:path*",
+//     "/services-vehicle-price/:path*",
+//   ],
+// };

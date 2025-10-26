@@ -29,6 +29,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { useMemo } from "react";
 import { roleAccessRules } from "@/config/roleAccess";
+import { extractUserRole } from "@/utils/auth";
 
 interface NavItem {
   label: string;
@@ -111,20 +112,8 @@ export default function MainNavigation({
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useUser();
 
-  const role = useMemo(() => {
-  try {
-    const userData = user?.response?.user || user?.user || user || {};
-    const roles = userData.roles || [];
-    if (!Array.isArray(roles)) return "customer"; // fallback default
-    const primaryRole =
-      typeof roles[0] === "string"
-        ? roles[0]
-        : roles[0]?.name || roles[0]?.role || "customer";
-    return primaryRole.toLowerCase();
-  } catch {
-    return "customer";
-  }
-}, [user]);
+const role = useMemo(() => extractUserRole(user), [user]);
+
 
 
 const isBlocked = (href: string): boolean => {

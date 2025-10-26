@@ -8,9 +8,7 @@ export const roleAccessRules: Record<string, string[]> = {
     "/contractors",
     "/vehicles",
     "/vehicle-types",
-    "/jobs/manage",
-    "/jobs/audit-trail",
-    "/billing"
+    "/services-vehicle-price",
   ],
   customer: [
     "/billing",
@@ -20,8 +18,8 @@ export const roleAccessRules: Record<string, string[]> = {
     "/vehicles",
     "/vehicle-types",
     "/general-settings",
+    "/services-vehicle-price",
     "/jobs/manage",
-    "/jobs/audit-trail"
   ],
   driver: [
     "/billing",
@@ -31,18 +29,9 @@ export const roleAccessRules: Record<string, string[]> = {
     "/vehicles",
     "/vehicle-types",
     "/general-settings",
+    "/services-vehicle-price",
+    "/jobs/new",
+    "/jobs/bulk-upload",
     "/jobs/manage",
-    "/jobs/audit-trail"
-  ],
-  guest: [
-    "/billing",
-    "/drivers",
-    "/customers",
-    "/contractors",
-    "/vehicles",
-    "/vehicle-types",
-    "/general-settings",
-    "/jobs/manage",
-    "/jobs/audit-trail"
   ]
 };

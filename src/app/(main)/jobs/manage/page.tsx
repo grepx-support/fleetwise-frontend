@@ -18,7 +18,7 @@ import { useCopiedJob } from '@/context/CopiedJobContext';
 import { UpdateJobStatusModal } from '@/components/molecules/UpdateJobStatusModal';
 import { useQueryClient } from '@tanstack/react-query';
 import { jobKeys } from '@/hooks/useJobs';
-
+import { useUser } from '@/context/UserContext';
 // Column configuration for Jobs table (simple, filterable)
 // Only Job ID, Customer, Status as requested
 const columns: EntityTableColumn<Job & { stringLabel?: string }>[] = [
@@ -114,6 +114,9 @@ const ManageJobsPage = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [updateStatusModalOpen, setUpdateStatusModalOpen] = useState(false);
   const [jobToUpdate, setJobToUpdate] = useState<Job | null>(null);
+  const { user } = useUser();
+  const role = (user?.roles?.[0]?.name || "guest").toLowerCase();
+    
 
   // Cancellation reasons
   const cancellationReasons = [
@@ -389,8 +392,8 @@ const ManageJobsPage = () => {
 
   if (error) return <div>Failed to load jobs. Error: {error.message}</div>;
 
-  return (
-    <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
+  return (<div>
+    {!["customer", "driver"].includes(role) && ( <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-text-main">Manage Jobs</h1>
         <div className="flex gap-2 self-start md:self-auto">
@@ -430,7 +433,7 @@ const ManageJobsPage = () => {
             {[10, 20, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
           </select>
         </div>
-      </div>
+      </div> 
       <div className="flex-grow rounded-xl shadow-lg bg-background-light border border-border-color overflow-hidden">
         <div className="w-full overflow-x-auto md:overflow-x-visible">
           <EntityTable
@@ -494,7 +497,7 @@ const ManageJobsPage = () => {
             onSelectionChange={(selectedIds) => setSelectedJobs(selectedIds.map(id => Number(id)))}
           />
         </div>
-      </div>
+      </div> 
       
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -563,7 +566,7 @@ const ManageJobsPage = () => {
               >
                 Cancel Job
               </button>
-            </div>
+            </div> 
           </div>
         </div>
       )}
@@ -614,8 +617,8 @@ const ManageJobsPage = () => {
               >
                 Cancel Jobs
               </button>
-            </div>
-          </div>
+            </div> 
+          </div> 
         </div>
       )}
       
@@ -649,9 +652,11 @@ const ManageJobsPage = () => {
         cancelLabel="Cancel"
         onConfirm={confirmDelete}
         onCancel={() => { setConfirmOpen(false); setPendingDeleteId(null); }}
-      />
+      />  
+    </div>  
+    )}
     </div>
-  );
+  ); 
 };
 
 export default ManageJobsPage;

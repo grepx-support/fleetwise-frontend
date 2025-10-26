@@ -7,11 +7,16 @@ import JobForm from '@/components/organisms/JobForm';
 import type { JobFormData } from '@/types/job';
 import toast from 'react-hot-toast';
 import { useCopiedJob } from '@/context/CopiedJobContext';
+import { useUser } from '@/context/UserContext';
 
 export default function NewJobPage() {
   const router = useRouter();
   const { createJob, isCreating, error } = useJobs();
   const { copiedJobData, clearCopiedJobData } = useCopiedJob();
+  const { user } = useUser();
+  const role = (user?.roles?.[0]?.name || "guest").toLowerCase();
+    
+    
 
   // Log any errors that occur
   useEffect(() => {
@@ -41,12 +46,12 @@ export default function NewJobPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <JobForm
+     {!["driver"].includes(role) && ( <JobForm
         initialData={copiedJobData || undefined}
         onSave={handleSubmit}
         isLoading={isCreating}
         onCancel={handleCancel}
-      />
+      /> )}
     </div>
   );
 }
