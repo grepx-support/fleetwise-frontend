@@ -159,14 +159,18 @@ const JobsPage = () => {
   const [localFilters, setLocalFilters] = useState<Record<string, string>>({});
   const debouncedLocalFilters = useDebounce(localFilters, 500); // 500ms debounce for column filters
 
-  const debouncedFilters = useDebounce(filters, 300);
+  // Standardized to 500ms to match localFilters debounce and prevent race conditions
+  const debouncedFilters = useDebounce(filters, 500);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
   // Update API filters when column filters change (debounced)
+  // Not spreading filters to avoid stale closure bugs and infinite loops
   React.useEffect(() => {
-    updateFilters({ ...filters, ...debouncedLocalFilters });
-  }, [debouncedLocalFilters]);
+    updateFilters({
+      ...debouncedLocalFilters
+    });
+  }, [debouncedLocalFilters, updateFilters]);
 
   // Calculate status counts from all jobs, not filtered jobs
   const statusCounts = useMemo(() => {
@@ -335,14 +339,19 @@ const JobsPage = () => {
     }
   };
 
-  // Apply filters to jobs
+  // TECHNICAL DEBT: Client-side filtering creates O(n) performance overhead.
+  // The debouncedFilters are applied client-side here, but ideally all filtering should be done by the API.
+  // Current implementation loads all jobs matching API filters, then re-filters them client-side.
+  // For datasets >10k jobs, consider removing this and relying entirely on backend filtering.
   const filteredJobs = (jobs ?? []).filter(job =>
     Object.entries(debouncedFilters).every(([col, val]) =>
       !val || (job[col]?.toString().toLowerCase().includes(val.toLowerCase()))
     )
   );
 
-  // Sort jobs
+  // TECHNICAL DEBT: Client-side sorting creates O(n log n) performance overhead.
+  // Ideally, sorting should be handled by the backend API via 'sortBy' and 'sortDir' parameters.
+  // Current implementation sorts all filtered jobs in memory before pagination.
   const sortedJobs = [...filteredJobs].sort((a, b) => {
     const aVal = a[sortBy];
     const bVal = b[sortBy];
