@@ -279,12 +279,13 @@ export default function ExcelUploadTable({
       if (!currentEditData.service) {
         errors.push('Service is required');
       }
-      if (!currentEditData.vehicle_id || !currentEditData.vehicle) {
-        errors.push('Vehicle is required');
-      }
-      if (!currentEditData.driver_id || !currentEditData.driver) {
-        errors.push('Driver is required');
-      }
+      // Driver and vehicle are now optional for bulk upload
+      // if (!currentEditData.vehicle_id || !currentEditData.vehicle) {
+      //   errors.push('Vehicle is required');
+      // }
+      // if (!currentEditData.driver_id || !currentEditData.driver) {
+      //   errors.push('Driver is required');
+      // }
       if (!currentEditData.pickup_date) {
         errors.push('Pickup date is required');
       }
