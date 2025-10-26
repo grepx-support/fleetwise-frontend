@@ -134,8 +134,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     },
     onError: (error: any) => {
       // Handle scheduling conflict errors specially
@@ -158,8 +156,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     },
     onError: (error: any) => {
       // Handle scheduling conflict errors specially
@@ -180,8 +176,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     }
   });
 
@@ -194,8 +188,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to cancel job');
@@ -211,8 +203,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to re-instate job');
@@ -228,8 +218,6 @@ export function useJobs(initialJobId?: number): UseJobsReturn {
       queryClient.invalidateQueries({ queryKey: [...jobKeys.all, 'list'] });
       // Also invalidate the all-status-counts query used in jobs page for status/customer counts
       queryClient.invalidateQueries({ queryKey: ['jobs', 'all-status-counts'] });
-      // Invalidate customers query to update customer counts
-      queryClient.invalidateQueries({ queryKey: ['customers', 'list'] });
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to cancel jobs');

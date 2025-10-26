@@ -95,7 +95,7 @@ const ManageJobsPage = () => {
   const [sortBy, setSortBy] = useState<string>('pickup_date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebounce(search, 500);
 
   // Local filter state for debouncing before sending to API
   const [localFilters, setLocalFilters] = useState<Record<string, string>>({});

@@ -159,6 +159,9 @@ const JobsPage = () => {
   const [localFilters, setLocalFilters] = useState<Record<string, string>>({});
   const debouncedLocalFilters = useDebounce(localFilters, 500); // 500ms debounce for column filters
 
+  // Version counter to cancel stale debounced filter updates (e.g., when user switches tabs)
+  const filterVersionRef = React.useRef(0);
+
   // Standardized to 500ms to match localFilters debounce and prevent race conditions
   const debouncedFilters = useDebounce(filters, 500);
   const [editJob, setEditJob] = useState<Job | null>(null);
@@ -167,9 +170,17 @@ const JobsPage = () => {
   // Update API filters when column filters change (debounced)
   // Not spreading filters to avoid stale closure bugs and infinite loops
   React.useEffect(() => {
-    updateFilters({
-      ...debouncedLocalFilters
-    });
+    const currentVersion = filterVersionRef.current;
+    const timeoutId = setTimeout(() => {
+      // Only apply the update if version hasn't changed (no tab switch occurred)
+      if (currentVersion === filterVersionRef.current) {
+        updateFilters({
+          ...debouncedLocalFilters
+        });
+      }
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
   }, [debouncedLocalFilters, updateFilters]);
 
   // Calculate status counts from all jobs, not filtered jobs
@@ -186,6 +197,8 @@ const JobsPage = () => {
 
   const handleTabChange = (value: string) => {
     const statusValue = value === 'all' ? undefined : value;
+    // Increment version to cancel any pending debounced filter updates
+    filterVersionRef.current += 1;
     // Reset customer filter to "All Customers" when changing status filter
     updateFilters({ ...filters, status: statusValue, customer_name: '' });
     // Also clear local filters
