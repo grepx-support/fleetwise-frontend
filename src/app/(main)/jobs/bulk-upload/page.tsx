@@ -10,7 +10,7 @@ import {
 import ExcelUploadTable from '@/components/organisms/ExcelUploadTable';
 import { useUser } from '@/context/UserContext';
 import { uploadDownloadApi, type PreviewData as ApiPreviewData, type ExcelRow as ApiExcelRow } from '@/services/api/uploadDownloadApi';
-
+import NotAuthorizedPage from '@/app/not-authorized/page';
 // Extend the API ExcelRow interface to include is_rejected property
 interface ExcelRow extends ApiExcelRow {
   is_rejected?: boolean;
@@ -273,11 +273,14 @@ export default function BulkUploadPage() {
       fileInputRef.current.value = '';
     }
   };
+  if (["driver"].includes(role)) {
+  return <NotAuthorizedPage />;
+}
 
   return (
   
 <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
-     {!["customer", "driver"].includes(role) && ( <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -492,7 +495,7 @@ export default function BulkUploadPage() {
           </div>
         )}
 
-      </div>)}
+      </div>
     </div> 
   );
 } 

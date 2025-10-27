@@ -19,6 +19,7 @@ import { UpdateJobStatusModal } from '@/components/molecules/UpdateJobStatusModa
 import { useQueryClient } from '@tanstack/react-query';
 import { jobKeys } from '@/hooks/useJobs';
 import { useUser } from '@/context/UserContext';
+import NotAuthorizedPage from '@/app/not-authorized/page';
 // Column configuration for Jobs table (simple, filterable)
 // Only Job ID, Customer, Status as requested
 const columns: EntityTableColumn<Job & { stringLabel?: string }>[] = [
@@ -390,10 +391,14 @@ const ManageJobsPage = () => {
   const startIdx = (page - 1) * pageSize + 1;
   const endIdx = Math.min(page * pageSize, total);
 
+   if (["customer","driver"].includes(role)) {
+    return <NotAuthorizedPage />;
+  }
+
   if (error) return <div>Failed to load jobs. Error: {error.message}</div>;
 
   return (<div>
-    {!["customer", "driver"].includes(role) && ( <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
+     <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-text-main">Manage Jobs</h1>
         <div className="flex gap-2 self-start md:self-auto">
@@ -654,7 +659,7 @@ const ManageJobsPage = () => {
         onCancel={() => { setConfirmOpen(false); setPendingDeleteId(null); }}
       />  
     </div>  
-    )}
+  
     </div>
   ); 
 };

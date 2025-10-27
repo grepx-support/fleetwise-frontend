@@ -19,7 +19,8 @@ export async function middleware(req: NextRequest) {
 
   let role = "guest";
   try {
-    const res = await fetch(`${req.nextUrl.origin}/api/auth/me`, {
+    const backendUrl = process.env.AUTH_BACKEND_URL || req.nextUrl.origin;
+    const res = await fetch(`${backendUrl}/api/auth/me`, {
       credentials: "include", // ensures HttpOnly cookie is sent
       headers: {
         "Content-Type": "application/json",
@@ -43,11 +44,23 @@ export async function middleware(req: NextRequest) {
       // Unauthenticated or expired session
       return NextResponse.redirect(new URL("/login", req.url));
     }
-  } catch (err) {
-    console.error("❌ Error verifying user role in middleware:", err);
-    // fallback to guest if backend temporarily unreachable
-    role = "guest";
+  } catch (err: any) {
+
+  const isProd = process.env.NODE_ENV === "production";
+
+  if (!isProd) {
+    console.error("[AUTH_MIDDLEWARE_ERROR]", {
+      message: err?.message,
+      name: err?.name,
+    });
   }
+
+  if (isProd) {
+    console.warn("[AUTH_MIDDLEWARE_ERROR]");
+  }
+
+  role = "guest";
+}
   const path = req.nextUrl.pathname;
   if (isBlocked(role, path)) {
     const url = req.nextUrl.clone();

@@ -8,6 +8,7 @@ import type { JobFormData } from '@/types/job';
 import toast from 'react-hot-toast';
 import { useCopiedJob } from '@/context/CopiedJobContext';
 import { useUser } from '@/context/UserContext';
+import NotAuthorizedPage from '@/app/not-authorized/page';
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -43,15 +44,18 @@ export default function NewJobPage() {
     clearCopiedJobData();
     router.push('/jobs');
   };
+   if (["driver"].includes(role)) {
+    return <NotAuthorizedPage />;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
-     {!["driver"].includes(role) && ( <JobForm
+      <JobForm
         initialData={copiedJobData || undefined}
         onSave={handleSubmit}
         isLoading={isCreating}
         onCancel={handleCancel}
-      /> )}
+      /> 
     </div>
   );
 }

@@ -24,6 +24,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import JobForm from '@/components/organisms/JobForm';
 import toast from 'react-hot-toast';
 import { useUser } from '@/context/UserContext';
+import NotAuthorizedPage from '@/app/not-authorized/page';
 
 // Column configuration for Jobs table (simple, filterable)
 const columns: EntityTableColumn<Job & { stringLabel?: string }>[] = [
@@ -395,11 +396,15 @@ const JobsPage = () => {
   const startIdx = (page - 1) * pageSize + 1;
   const endIdx = Math.min(page * pageSize, total);
 
+   if (["driver"].includes(role)) {
+    return <NotAuthorizedPage />;
+  }
+
   if (error) return <div>Failed to load jobs. Error: {error.message}</div>;
 
   return (
     <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
-      {!["driver"].includes(role) && ( <EntityHeader 
+      <EntityHeader 
         title="Jobs" 
         onAddClick={() => router.push('/jobs/new')} 
         addLabel="Add Job"
@@ -412,7 +417,7 @@ const JobsPage = () => {
           </> 
         } 
         className="mb-4"
-      /> )}
+      /> 
       <div className="flex flex-col md:flex-row md:items-center gap-4 bg-background pt-4 pb-4 rounded-t-xl">
         <div className="flex-1">
           <h3 className="font-bold text-text-main mb-3 px-4 py-2">Filter by status</h3>
