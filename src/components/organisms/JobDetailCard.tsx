@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Job } from '@/types/job';
+import type { Job } from '@/types/types';
 import { Badge } from '@/components/atoms/Badge';
 import { DetailSection } from '@/components/molecules/DetailSection';
 import { DetailItem } from '@/components/molecules/DetailItem';
@@ -29,12 +29,14 @@ export default function JobDetailCard({ job }: { job: Job }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-8">
           
           <DetailSection title="Customer Info">
-              <DetailItem label="Name" value={job.customer_name} />
-              <DetailItem label="Mobile" value={job.customer_mobile} />
+              <DetailItem label="Name" value={job.customer?.name} />
+              <DetailItem label="Email" value={job.customer?.email} />
+              <DetailItem label="Mobile" value={job.customer?.mobile} />
+              <DetailItem label="Company" value={job.customer?.company_name} />
           </DetailSection>
 
           <DetailSection title="Trip Details">
-              <DetailItem label="Service Type" value={job.service_type} />
+              <DetailItem label="Service Type" value={job.service?.name} />
               <DetailItem label="Pickup" value={job.pickup_location} />
               <DetailItem label="Drop-off" value={job.dropoff_location} />
               <DetailItem label="Date & Time" value={job.pickup_date && job.pickup_time ? `${job.pickup_date} at ${job.pickup_time}` : (job.pickup_date || '')} />
@@ -48,8 +50,8 @@ export default function JobDetailCard({ job }: { job: Job }) {
           
           <DetailSection title="Assignment & Other">
               <DetailItem label="Vehicle" value={job.vehicle_type || 'Not Assigned'} />
-              <DetailItem label="Driver" value={job.driver_id ? 'Assigned' : 'Not Assigned'} />
-              <DetailItem label="Invoice #" value={job.invoice_number || 'Not Assigned'} />
+              <DetailItem label="Driver" value={job.driver?.name || 'Not Assigned'} />
+              <DetailItem label="Invoice #" value={job.invoice?.id || 'Not Assigned'} />
               <DetailItem label="Passenger" value={job.passenger_name} />
           </DetailSection>
         </div>

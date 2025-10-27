@@ -9,12 +9,14 @@ interface JobSummaryModalProps {
 
 export default function JobSummaryModal({ isOpen, onClose, jobSummary }: JobSummaryModalProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Reset copied state when modal opens
   useEffect(() => {
     if (isOpen) {
       setIsCopied(false);
+      setCopyError(false);
     }
   }, [isOpen]);
 
@@ -22,9 +24,13 @@ export default function JobSummaryModal({ isOpen, onClose, jobSummary }: JobSumm
     try {
       await navigator.clipboard.writeText(jobSummary);
       setIsCopied(true);
+      setCopyError(false);
       setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
     } catch (err) {
       console.error('Failed to copy text: ', err);
+      setIsCopied(false);
+      setCopyError(true);
+      setTimeout(() => setCopyError(false), 3000);
     }
   };
 
@@ -78,7 +84,9 @@ export default function JobSummaryModal({ isOpen, onClose, jobSummary }: JobSumm
             onClick={handleCopyToClipboard}
             className="flex items-center bg-blue-600 hover:bg-blue-700"
           >
-            {isCopied ? (
+            {copyError ? (
+              'Copy Failed - Try Again'
+            ) : isCopied ? (
               <>
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>

@@ -1,4 +1,4 @@
-import type { Job } from '@/types/job';
+import type { Job } from '@/types/types';
 
 /**
  * Generates a formatted text summary of a job for sharing
@@ -9,13 +9,13 @@ export function generateJobSummary(job: Job): string {
   const lines: string[] = [];
 
   // Customer Account
-  if (job.customer_name) {
-    lines.push(`Customer Account: ${job.customer_name}`);
+  if (job.customer?.name) {
+    lines.push(`Customer Account: ${job.customer.name}`);
   }
 
   // SIXT Booking Reference
-  if (job.booking_ref) {
-    lines.push(`SIXT Booking Reference: ${job.booking_ref}`);
+  if (job.reference) {
+    lines.push(`SIXT Booking Reference: ${job.reference}`);
   }
 
   // Type of vehicle
@@ -25,7 +25,10 @@ export function generateJobSummary(job: Job): string {
 
   // Pick up Date and Time
   if (job.pickup_date && job.pickup_time) {
-    lines.push(`Pick up Date and Time: ${formatDateTime(job.pickup_date, job.pickup_time)}`);
+    const formattedDateTime = formatDateTime(job.pickup_date, job.pickup_time);
+    if (formattedDateTime) {
+      lines.push(`Pick up Date and Time: ${formattedDateTime}`);
+    }
   }
 
   // Pick up Location
@@ -52,8 +55,8 @@ export function generateJobSummary(job: Job): string {
   }
 
   // Driver Notes
-  if (job.customer_remark) {
-    lines.push(`Driver Notes: ${job.customer_remark}`);
+  if (job.remarks) {
+    lines.push(`Driver Notes: ${job.remarks}`);
   }
 
   return lines.join('\n');
@@ -66,9 +69,9 @@ export function generateJobSummary(job: Job): string {
  * @returns Formatted date and time string
  */
 function formatDateTime(date: string, time: string): string {
-  // Convert YYYY-MM-DD to DD/MM/YYYY
+  if (!date || !time) return '';
   const dateParts = date.split('-');
-  if (dateParts.length === 3) {
+  if (dateParts.length === 3 && dateParts.every(part => part && !isNaN(Number(part)))) {
     const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
     return `${formattedDate} ${time}`;
   }
