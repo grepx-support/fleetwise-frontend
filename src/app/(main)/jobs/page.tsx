@@ -24,6 +24,7 @@ import { Eye, Pencil, Trash2, ArrowUp, ArrowDown, Copy } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import JobForm from '@/components/organisms/JobForm';
 import toast from 'react-hot-toast';
+import { parseJobText } from '@/utils/jobTextParser';
 
 // Column configuration for Jobs table (simple, filterable)
 const columns: EntityTableColumn<Job & { stringLabel?: string }>[] = [
@@ -149,17 +150,27 @@ const JobsPage = () => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
-
+  const [search, setSearch] = useState('');
+  
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
   const [openCreateFromTextModal, setOpenCreateFromTextModal] = useState(false);
-  const [isCreatingFromText, setIsCreatingFromText] = useState(false);
   const [sortBy, setSortBy] = useState<string>('pickup_date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const debouncedFilters = useDebounce(filters, 300);
+  const [localFilters, setLocalFilters] = useState<Record<string, string>>({});
+  const debouncedLocalFilters = useDebounce(localFilters, 500);
+  const debouncedSearch = useDebounce(search, 500);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  // Update server-side filters when search or local filters change
+  React.useEffect(() => {
+    updateFilters({
+      search: debouncedSearch,
+      ...debouncedLocalFilters
+    });
+  }, [debouncedSearch, debouncedLocalFilters, updateFilters]);
 
   // Calculate status counts from all jobs, not filtered jobs
   const statusCounts = useMemo(() => {
@@ -176,16 +187,16 @@ const JobsPage = () => {
   const handleTabChange = (value: string) => {
     const statusValue = value === 'all' ? undefined : value;
     // Reset customer filter to "All Customers" when changing status filter
-    updateFilters({ ...filters, status: statusValue, customer_name: '' });
+    setLocalFilters(prev => ({ ...prev, status: statusValue, customer_name: '' }));
   };
 
   const handleFilterChange = (col: string, value: string) => {
-    updateFilters({ ...filters, [col]: value });
+    setLocalFilters(prev => ({ ...prev, [col]: value }));
     setPage(1);
   };
 
   const handleClearFilter = (col: string) => {
-    updateFilters({ ...filters, [col]: '' });
+    setLocalFilters(prev => ({ ...prev, [col]: '' }));
     setPage(1);
   };
 
@@ -302,19 +313,15 @@ const JobsPage = () => {
     }
   };
 
-  const handleCreateJobFromText = async (text: string) => {
-    setIsCreatingFromText(true);
-    try {
-      const job = await jobsApi.createJobFromText(text);
-      setOpenCreateFromTextModal(false);
-      setIsCreatingFromText(false);
-      toast.success('Job created successfully from text!');
-      // Refresh the jobs list
-      window.location.reload();
-    } catch (error: any) {
-      setIsCreatingFromText(false);
-      toast.error(error?.message || 'Failed to create job from text');
+  const handleCreateJobFromText = (text: string) => {
+    const parseResult = parseJobText(text);
+    if (parseResult.errors) {
+      toast.error(parseResult.errors.join(', '));
+      return;
     }
+    setCopiedJobData(parseResult.data);
+    router.push('/jobs/new');
+    setOpenCreateFromTextModal(false);
   };
 
   const confirmDelete = async () => {
@@ -331,15 +338,8 @@ const JobsPage = () => {
     }
   };
 
-  // Apply filters to jobs
-  const filteredJobs = (jobs ?? []).filter(job =>
-    Object.entries(debouncedFilters).every(([col, val]) =>
-      !val || (job[col] !== undefined && job[col] !== null && job[col].toString().toLowerCase().includes(val.toLowerCase()))
-    )
-  );
-
-  // Sort jobs
-  const sortedJobs = [...filteredJobs].sort((a, b) => {
+  // Sort jobs (use server-filtered jobs directly)
+  const sortedJobs = [...(jobs ?? [])].sort((a, b) => {
     const aVal = a[sortBy];
     const bVal = b[sortBy];
     
@@ -369,30 +369,46 @@ const JobsPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-2 py-6 w-full flex flex-col gap-4">
-      <EntityHeader 
-        title="Jobs" 
-        onAddClick={() => router.push('/jobs/new')} 
-        addLabel="Add Job"
-        extraActions={
-          <>
-            <AnimatedButton onClick={() => router.push('/jobs/bulk-upload')} variant="outline" className="flex items-center">
-              <Upload className="mr-2 h-4 w-4" />
-              Bulk Upload
-            </AnimatedButton>
-            <AnimatedButton onClick={() => setOpenCreateFromTextModal(true)} variant="outline" className="flex items-center">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Create from Text
-            </AnimatedButton>
-          </>
-        }
-        className="mb-4"
-      />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-4">
+          <EntityHeader 
+            title="Jobs" 
+            className="mb-0"
+          />
+          <div className="w-full md:w-64">
+            <input
+              type="text"
+              placeholder="Search jobs..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full rounded-lg px-3 py-2 text-sm transition-colors bg-background-light border-border-color text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              aria-label="Search jobs"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <AnimatedButton onClick={() => router.push('/jobs/bulk-upload')} variant="outline" className="flex items-center">
+            <Upload className="mr-2 h-4 w-4" />
+            Bulk Upload
+          </AnimatedButton>
+          <AnimatedButton onClick={() => setOpenCreateFromTextModal(true)} variant="outline" className="flex items-center">
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Create from Text
+          </AnimatedButton>
+          <AnimatedButton 
+            onClick={() => router.push('/jobs/new')}
+            className="flex items-center"
+          >
+            <PlusCircle className="mr-2 h-4 w-4" />
+            <span>Add Job</span>
+          </AnimatedButton>
+        </div>
+      </div>
       
       <CreateJobFromTextModal
         isOpen={openCreateFromTextModal}
         onClose={() => setOpenCreateFromTextModal(false)}
         onSubmit={handleCreateJobFromText}
-        isLoading={isCreatingFromText}
       />
       <div className="flex flex-col md:flex-row md:items-center gap-4 bg-background pt-4 pb-4 rounded-t-xl">
         <div className="flex-1">
@@ -517,9 +533,7 @@ const JobsPage = () => {
             rowClassName={(job) => expandedJobId === job.id ? 'bg-primary/10' : ''}
             onRowClick={handleView}
             expandedRowId={expandedJobId}
-            filters={Object.fromEntries(
-              Object.entries(filters).filter(([_, value]) => value !== undefined && value !== null && value !== '')
-            ) as Record<string, string>}
+            filters={localFilters}
             onFilterChange={handleFilterChange}
             page={page}
             pageSize={pageSize}

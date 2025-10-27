@@ -162,6 +162,8 @@ function parseDateTime(dateTimeStr: string): { date?: string; time?: string } {
   
   if (match) {
     const [, day, month, year, hour, minute] = match;
+    // NOTE: Assumes input time is in user's local timezone
+    // Backend must handle conversion to UTC on save
     // Convert to YYYY-MM-DD format
     const date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     // Keep time as HH:MM
@@ -176,6 +178,8 @@ function parseDateTime(dateTimeStr: string): { date?: string; time?: string } {
   
   if (match2) {
     const [, day, month, year, hour, minute] = match2;
+    // NOTE: Assumes input time is in user's local timezone
+    // Backend must handle conversion to UTC on save
     const date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     const time = `${hour.padStart(2, '0')}:${minute}`;
     return { date, time };

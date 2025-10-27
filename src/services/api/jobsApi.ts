@@ -214,12 +214,6 @@ export async function createJob(data: JobFormData): Promise<Job> {
   }
 }
 
-/** Create a new job from text */
-export async function createJobFromText(text: string): Promise<Job> {
-  const response = await api.post<Job>('/api/jobs/create-from-text', { text });
-  return response.data;
-}
-
 /** Update existing job */
 export async function updateJob(id: number, data: Partial<JobFormData>): Promise<Job> {
   // Filter out read-only fields that are marked as dump_only in the backend schema

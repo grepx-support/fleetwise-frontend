@@ -87,7 +87,7 @@ const getJobActions = (
 const ManageJobsPage = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { jobs, isLoading, error, updateJobAsync, deleteJobAsync, cancelJobAsync, reinstateJobAsync } = useJobs();
+  const { jobs, isLoading, error, updateFilters, updateJobAsync, deleteJobAsync, cancelJobAsync, reinstateJobAsync } = useJobs();
   const { setCopiedJobData } = useCopiedJob();
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
   const [tableFilters, setTableFilters] = useState<Record<string, string>>({});
@@ -96,7 +96,17 @@ const ManageJobsPage = () => {
   const [sortBy, setSortBy] = useState<string>('pickup_date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
-  const debouncedFilters = useDebounce(tableFilters, 300);
+  const [localFilters, setLocalFilters] = useState<Record<string, string>>({});
+  const debouncedLocalFilters = useDebounce(localFilters, 500);
+  const debouncedSearch = useDebounce(search, 500);
+
+  // Update server-side filters when search or local filters change
+  React.useEffect(() => {
+    updateFilters({
+      search: debouncedSearch,
+      ...debouncedLocalFilters
+    });
+  }, [debouncedSearch, debouncedLocalFilters, updateFilters]);
   const [selectedJobs, setSelectedJobs] = useState<number[]>([]);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [reinstateDialogOpen, setReinstateDialogOpen] = useState(false);
@@ -120,12 +130,12 @@ const ManageJobsPage = () => {
   ];
 
   const handleFilterChange = (col: string, value: string) => {
-    setTableFilters((prev) => ({ ...prev, [col]: value }));
+    setLocalFilters((prev) => ({ ...prev, [col]: value }));
     setPage(1);
   };
 
   const handleClearFilter = (col: string) => {
-    setTableFilters((prev) => ({ ...prev, [col]: '' }));
+    setLocalFilters((prev) => ({ ...prev, [col]: '' }));
     setPage(1);
   };
 
@@ -329,15 +339,10 @@ const ManageJobsPage = () => {
     setUpdateStatusModalOpen(true);
   };
 
-  // Apply filters to jobs and exclude jc and sd status jobs
+  // Filter jobs to exclude jc and sd status jobs (server handles other filters)
   const filteredJobs = (jobs ?? []).filter(job =>
     // Exclude jobs with jc (completed) or sd (stand-down) status
-    job.status !== 'jc' && job.status !== 'sd' &&
-    Object.entries(debouncedFilters).every(([col, val]) =>
-      !val || (job[col] !== undefined && job[col] !== null && job[col].toString().toLowerCase().includes(val.toLowerCase()))
-    ) &&
-    (!search || (job.customer_name?.toLowerCase() ?? '').includes(search.toLowerCase()) ||
-      (job.id?.toString()?.toLowerCase() ?? '').includes(search.toLowerCase()))
+    job.status !== 'jc' && job.status !== 'sd'
   );
 
   // Sort jobs
@@ -465,7 +470,7 @@ const ManageJobsPage = () => {
             }}
             onRowClick={handleView}
             expandedRowId={expandedJobId}
-            filters={tableFilters}
+            filters={localFilters}
             onFilterChange={handleFilterChange}
             page={page}
             pageSize={pageSize}

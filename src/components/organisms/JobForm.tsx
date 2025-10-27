@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSubCustomers } from '@/hooks/useSubCustomers';
 import DynamicLocationList from '@/components/molecules/DynamicLocationList';
@@ -519,20 +519,124 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   }, []);
   
   // Auto-map names to IDs when options are loaded (for text-parsed jobs)
+  const mappingDoneRef = useRef(false);
+  
+  // Memoize customer matching to avoid recomputing on every render
+  const matchedCustomerId = useMemo(() => {
+    // Only run matching if we have a customer name but no customer_id
+    if (!formData.customer_name || formData.customer_id) return null;
+    
+    // Normalize customer names for comparison
+    const normalizeName = (name: string) => {
+      if (!name) return '';
+      return name
+        .toLowerCase()
+        .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+        .replace(/[^\w\s\-&']/g, '') // Keep alphanumeric, spaces, hyphens, ampersands, and apostrophes
+        .trim();
+    };
+    
+    const normalizedInputName = normalizeName(formData.customer_name);
+    
+    // Early return if no customers or empty input
+    if (!allCustomers || allCustomers.length === 0 || !normalizedInputName) {
+      return null;
+    }
+    
+    // Try exact match first (most efficient)
+    let match = allCustomers.find(c => 
+      normalizeName(c.name) === normalizedInputName
+    );
+    
+    // If no exact match, try partial match
+    if (!match) {
+      match = allCustomers.find(c => 
+        normalizeName(c.name).includes(normalizedInputName) || 
+        normalizedInputName.includes(normalizeName(c.name))
+      );
+    }
+    
+    // If still no match, return null (fuzzy matching will be handled separately)
+    return match?.id || null;
+  }, [formData.customer_name, formData.customer_id, allCustomers]); // Only recompute when these values change
+  
+  // Memoize fuzzy matching to avoid expensive computations
+  const fuzzyMatchedCustomerId = useMemo(() => {
+    // Only run fuzzy matching if we have a customer name, no customer_id, and no exact/partial match
+    if (!formData.customer_name || formData.customer_id || matchedCustomerId) return null;
+    
+    // Normalize customer names for comparison
+    const normalizeName = (name: string) => {
+      if (!name) return '';
+      return name
+        .toLowerCase()
+        .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+        .replace(/[^\w\s\-&']/g, '') // Keep alphanumeric, spaces, hyphens, ampersands, and apostrophes
+        .trim();
+    };
+    
+    const normalizedInputName = normalizeName(formData.customer_name);
+    
+    // Early return if no customers or empty input
+    if (!allCustomers || allCustomers.length === 0 || !normalizedInputName) {
+      return null;
+    }
+    
+    // Simple fuzzy matching - check if names are similar enough
+    const similarityThreshold = 0.8;
+    const getSimilarity = (str1: string, str2: string): number => {
+      const longer = str1.length > str2.length ? str1 : str2;
+      const shorter = str1.length > str2.length ? str2 : str1;
+      if (longer.length === 0) return 1.0;
+      
+      const editDistance = (s1: string, s2: string): number => {
+        const costs = new Array(s2.length + 1);
+        for (let i = 0; i <= s1.length; i++) {
+          let lastValue = i;
+          for (let j = 0; j <= s2.length; j++) {
+            if (i === 0) {
+              costs[j] = j;
+            } else {
+              if (j > 0) {
+                let newValue = costs[j - 1];
+                if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+                  newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                }
+                costs[j - 1] = lastValue;
+                lastValue = newValue;
+              }
+            }
+          }
+          if (i > 0) costs[s2.length] = lastValue;
+        }
+        return costs[s2.length];
+      };
+      
+      return (longer.length - editDistance(longer, shorter)) / parseFloat(longer.length.toString());
+    };
+    
+    const matchingCustomer = allCustomers.find(c => {
+      const normalizedCustomerName = normalizeName(c.name);
+      const similarity = getSimilarity(normalizedInputName, normalizedCustomerName);
+      return similarity >= similarityThreshold;
+    });
+    
+    return matchingCustomer?.id || null;
+  }, [formData.customer_name, formData.customer_id, allCustomers, matchedCustomerId]); // Only recompute when these values change
+  
+  // Effect to update form data when customer match is found
   useEffect(() => {
-    // Only run mapping logic for text-parsed jobs (when we have initialData but no job ID)
-    const isTextParsedJob = props.initialData && Object.keys(props.initialData).length > 0 && !job?.id;
+    if (matchedCustomerId && !formData.customer_id) {
+      setFormData(prev => ({ ...prev, customer_id: matchedCustomerId }));
+    } else if (fuzzyMatchedCustomerId && !formData.customer_id) {
+      setFormData(prev => ({ ...prev, customer_id: fuzzyMatchedCustomerId }));
+    }
+  }, [matchedCustomerId, fuzzyMatchedCustomerId, formData.customer_id]);
+  
+  useEffect(() => {
+    const isTextParsedJob = props.initialData && !job?.id && !mappingDoneRef.current;
     
     if (!isTextParsedJob) return;
-    
-    // Additional check to prevent unnecessary runs
-    const hasCustomerMapping = formData.customer_name && formData.customer_id;
-    const hasServiceMapping = formData.service_type && formData.service_id;
-    const hasContractorMapping = (props.initialData as any)?.contractor_name && formData.contractor_id;
-    const hasVehicleTypeMapping = formData.vehicle_type && formData.vehicle_type_id;
-    
-    // If all mappings are done, no need to run
-    if (hasCustomerMapping && hasServiceMapping && hasContractorMapping && hasVehicleTypeMapping) return;
     
     // Debug log to see what we're working with
     console.log('[JobForm] Auto-mapping check:', {
@@ -588,47 +692,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         );
       }
       
-      // If still no match, try fuzzy matching with a similarity threshold
-      if (!matchingCustomer) {
-        // Simple fuzzy matching - check if names are similar enough
-        const similarityThreshold = 0.8;
-        const getSimilarity = (str1: string, str2: string): number => {
-          const longer = str1.length > str2.length ? str1 : str2;
-          const shorter = str1.length > str2.length ? str2 : str1;
-          if (longer.length === 0) return 1.0;
-          
-          const editDistance = (s1: string, s2: string): number => {
-            const costs = new Array(s2.length + 1);
-            for (let i = 0; i <= s1.length; i++) {
-              let lastValue = i;
-              for (let j = 0; j <= s2.length; j++) {
-                if (i === 0) {
-                  costs[j] = j;
-                } else {
-                  if (j > 0) {
-                    let newValue = costs[j - 1];
-                    if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
-                      newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                    }
-                    costs[j - 1] = lastValue;
-                    lastValue = newValue;
-                  }
-                }
-              }
-              if (i > 0) costs[s2.length] = lastValue;
-            }
-            return costs[s2.length];
-          };
-          
-          return (longer.length - editDistance(longer, shorter)) / parseFloat(longer.length.toString());
-        };
-        
-        matchingCustomer = allCustomers.find(c => {
-          const normalizedCustomerName = normalizeName(c.name);
-          const similarity = getSimilarity(normalizedInputName, normalizedCustomerName);
-          return similarity >= similarityThreshold;
-        });
-      }
+      // If still no match, we'll let the separate fuzzy matching useEffect handle it
+      // This avoids expensive computations in the main mapping effect
       
       if (matchingCustomer) {
         console.log('[JobForm] Found customer match:', matchingCustomer);
@@ -720,7 +785,10 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         }));
       }
     }
-  }, [allCustomers, allServices, allContractors, allVehicleTypes, formData.customer_name, formData.customer_id, formData.service_type, formData.service_id, formData.contractor_id, formData.vehicle_type, formData.vehicle_type_id, props.initialData, job?.id, toastState]);
+    
+    // Mark mapping as done to prevent re-running
+    mappingDoneRef.current = true;
+  }, [props.initialData, job?.id]); // Only essential deps
   
   // Reset toast state when component unmounts
   useEffect(() => {
@@ -1193,8 +1261,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       isUndefined: customerIdValue === undefined
     });
     
-    // Force validation for customer_id - this is critical
-    if (customerIdValue === undefined || customerIdValue === null || customerIdValue === 0) {
+    // Simplified validation - check for falsy values or 0
+    if (!customerIdValue || customerIdValue === 0) {
       console.log('[JobForm] Customer ID is invalid, setting error');
       newErrors.customer_id = "Customer is required";
     }
@@ -1205,7 +1273,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     
     if (!formData.service_type?.trim()) {
       // For text-parsed jobs, having service_type name is acceptable initially
-      if (!isTextParsedJob || !(initialData as any)?.service_type) {
+      if (!isTextParsedJob) {
         newErrors.service_type = "Service is required";
       }
     }
@@ -1257,10 +1325,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     const finalValidationCheck = Object.keys(errors).length === 0;
     console.log('[JobForm] Final validation check:', finalValidationCheck);
     
-    // Additional explicit check for customer_id
-    const isCustomerIdValid = formData.customer_id !== undefined && 
-                             formData.customer_id !== null && 
-                             formData.customer_id !== 0;
+    // Additional explicit check for customer_id - simplified to match validation
+    const isCustomerIdValid = Boolean(formData.customer_id) && formData.customer_id !== 0;
     console.log('[JobForm] Explicit customer ID check:', { 
       customerId: formData.customer_id, 
       isValid: isCustomerIdValid 
@@ -1659,8 +1725,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                     onChange={(v) => {
                       // Only allow changes if fields are not locked
                       if (!fieldsLocked) {
-                        // If empty string is selected, set customer_id to null instead of 0
-                        const customerId = v === "" ? null : Number(v);
+                        // If empty string is selected, set customer_id to 0 instead of null to match validation
+                        const customerId = v === "" ? 0 : Number(v);
                         console.log('[JobForm] Customer selection changed:', { 
                           selectedValue: v, 
                           convertedCustomerId: customerId,
@@ -1672,7 +1738,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                           // Clear any existing customer-related data when "Select Customer" is chosen
                           setFormData(prev => ({
                             ...prev,
-                            customer_id: null,
+                            customer_id: 0,
                             customer_name: "",
                             customer_mobile: "",
                             customer_email: null,
