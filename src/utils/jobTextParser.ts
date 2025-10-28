@@ -126,7 +126,7 @@ export function parseJobText(text: string): ParseResult {
     if (parsedData.vehicle_type) {
       // Normalize vehicle type names
       const vehicleTypeMap: Record<string, string> = {
-        'combi': 'Combi',
+        'combi': 'Premium 6 Seater',
         'e-class sedan': 'E-Class Sedan',
         'premium 6 seater': 'Premium 6 Seater',
         'v-class (7 seater)': 'V-Class (7 Seater)',
@@ -138,6 +138,10 @@ export function parseJobText(text: string): ParseResult {
       const normalized = parsedData.vehicle_type.toLowerCase();
       if (vehicleTypeMap[normalized]) {
         parsedData.vehicle_type = vehicleTypeMap[normalized];
+      } else {
+        // If no mapping found, set to empty string to trigger validation error
+        // This will make it clear that the vehicle type was not found
+        parsedData.vehicle_type = '';
       }
     }
 

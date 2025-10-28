@@ -1510,7 +1510,23 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     showQuickAdd = false,
     quickAddType,
     disabled = false, // Add disabled prop
-  }) => (
+  }) => {
+    // Check if the current value exists in the options
+    const valueExistsInOptions = value !== undefined && value !== null && 
+      value !== '' && options.some(option => String(option.value) === String(value));
+    
+    // If value doesn't exist in options, we'll add a special option to show this
+    const selectOptions = valueExistsInOptions 
+      ? options 
+      : [
+          ...(value && !valueExistsInOptions ? [{ value: value, label: `${value} (Not Found)` }] : []),
+          ...options
+        ];
+    
+    // Determine the actual value to use for the select
+    const selectValue = valueExistsInOptions || (value && !valueExistsInOptions) ? (value ?? "") : "";
+    
+    return (
     <div className={`space-y-1 ${className}`}>
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-300">
@@ -1524,14 +1540,14 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         )}
       </div>
       <select
-        value={value ?? ""}
+        value={selectValue}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         className={`w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
           error ? "border-red-500" : ""
         } ${disabled ? "bg-gray-600 cursor-not-allowed" : ""}`}
       >
-        {options.map((option) => (
+        {selectOptions.map((option) => (
           <option
             key={option.value}
             value={option.value}
@@ -1544,7 +1560,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       </select>
       {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
-  );
+  )};
 
 
   // Initialize UI location states based on form data
