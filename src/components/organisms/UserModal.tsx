@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { createUser, updateUser } from '@/services/api/userApi';
+import { createUser, updateUser, getUnassignedDrivers, getUnassignedCustomers, assignCustomerOrDriver } from '@/services/api/userApi';
 import { User, Role } from '@/lib/types';
+import { Driver } from '@/lib/types';
+import { Customer } from '@/types/customer';
 import { toast } from 'react-hot-toast';
 import { XMarkIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
@@ -21,6 +23,15 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
   // Password visibility states
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  // User type linking states
+  const [userType, setUserType] = useState<'driver' | 'customer' | null>(null);
+  const [availableDrivers, setAvailableDrivers] = useState<Driver[]>([]);
+  const [availableCustomers, setAvailableCustomers] = useState<Customer[]>([]);
+  const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [loadingDrivers, setLoadingDrivers] = useState(false);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -28,14 +39,59 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
       setIsActive(user.active);
       // For single role selection, use the first role if available
       setSelectedRoleId(user.roles && user.roles.length > 0 ? user.roles[0].id : null);
+      
+      // Set user type based on existing data
+      if (user.driver_id) {
+        setUserType('driver');
+        setSelectedDriverId(user.driver_id);
+      } else if (user.customer_id) {
+        setUserType('customer');
+        setSelectedCustomerId(user.customer_id);
+      }
     } else {
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       setIsActive(true);
       setSelectedRoleId(null);
+      setUserType(null);
+      setSelectedDriverId(null);
+      setSelectedCustomerId(null);
     }
   }, [user]);
+
+  // Fetch available drivers or customers when user type changes
+  useEffect(() => {
+    const fetchEntities = async () => {
+      if (userType === 'driver') {
+        setLoadingDrivers(true);
+        try {
+          const drivers = await getUnassignedDrivers();
+          setAvailableDrivers(drivers);
+        } catch (error) {
+          toast.error('Failed to fetch unassigned drivers');
+          console.error('Error fetching unassigned drivers:', error);
+        } finally {
+          setLoadingDrivers(false);
+        }
+      } else if (userType === 'customer') {
+        setLoadingCustomers(true);
+        try {
+          const customers = await getUnassignedCustomers();
+          setAvailableCustomers(customers);
+        } catch (error) {
+          toast.error('Failed to fetch unassigned customers');
+          console.error('Error fetching unassigned customers:', error);
+        } finally {
+          setLoadingCustomers(false);
+        }
+      }
+    };
+
+    if (userType) {
+      fetchEntities();
+    }
+  }, [userType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,27 +107,59 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
       return;
     }
     
+    // Validate user type selection
+    if (userType && userType === 'driver' && !selectedDriverId) {
+      toast.error('Please select a driver');
+      return;
+    }
+    
+    if (userType && userType === 'customer' && !selectedCustomerId) {
+      toast.error('Please select a customer');
+      return;
+    }
+    
     setLoading(true);
     
     try {
-      // Create user data for API call (role names as strings)
-      const userData: any = {
-        email,
-        active: isActive,
-        role_names: selectedRoleId ? [roles.find(role => role.id === selectedRoleId)?.name].filter(Boolean) : []
-      };
+      let userId: number;
       
-      // Include password only when creating a new user
-      if (!user && password) {
-        userData.password = password;
-      }
-      
+      // Create or update user first
       if (user) {
-        await updateUser(user.id, userData);
+        // Update existing user
+        const userData: any = {
+          email,
+          active: isActive,
+          role_names: selectedRoleId ? [roles.find(role => role.id === selectedRoleId)?.name].filter(Boolean) : []
+        };
+        
+        const updatedUser = await updateUser(user.id, userData);
+        userId = updatedUser.id;
         toast.success('User updated successfully');
       } else {
-        await createUser(userData);
+        // Create new user
+        const userData: any = {
+          email,
+          active: isActive,
+          role_names: selectedRoleId ? [roles.find(role => role.id === selectedRoleId)?.name].filter(Boolean) : []
+        };
+        
+        // Include password only when creating a new user
+        if (password) {
+          userData.password = password;
+        }
+        
+        const newUser = await createUser(userData);
+        userId = newUser.id;
         toast.success('User created successfully');
+      }
+      
+      // Assign customer or driver if needed
+      if (userType === 'driver' && selectedDriverId) {
+        await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
+        toast.success('Driver assigned successfully');
+      } else if (userType === 'customer' && selectedCustomerId) {
+        await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
+        toast.success('Customer assigned successfully');
       }
       
       onSave();
@@ -87,6 +175,18 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
   const handleRoleChange = (roleId: number) => {
     // For radio buttons, directly set the selected role ID
     setSelectedRoleId(roleId);
+    
+    // Set user type based on role
+    const role = roles.find(r => r.id === roleId);
+    if (role) {
+      if (role.name.toLowerCase() === 'driver') {
+        setUserType('driver');
+      } else if (role.name.toLowerCase() === 'customer') {
+        setUserType('customer');
+      } else {
+        setUserType(null);
+      }
+    }
   };
 
   return (
@@ -199,6 +299,71 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
               ))}
             </div>
           </div>
+          
+          {/* User Type Linking Section */}
+          {selectedRoleId && (
+            <div className="border-t border-gray-700 pt-4">
+              <h4 className="text-md font-medium text-white mb-2">User Type Linking</h4>
+              
+              {userType === 'driver' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Select Driver
+                  </label>
+                  {loadingDrivers ? (
+                    <div className="flex justify-center py-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500"></div>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedDriverId || ''}
+                      onChange={(e) => setSelectedDriverId(Number(e.target.value) || null)}
+                      className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">Select a driver</option>
+                      {availableDrivers.map((driver) => (
+                        <option key={driver.id} value={driver.id}>
+                          {driver.name} {driver.email ? `(${driver.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+              
+              {userType === 'customer' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Select Customer
+                  </label>
+                  {loadingCustomers ? (
+                    <div className="flex justify-center py-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500"></div>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedCustomerId || ''}
+                      onChange={(e) => setSelectedCustomerId(Number(e.target.value) || null)}
+                      className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">Select a customer</option>
+                      {availableCustomers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name} {customer.email ? `(${customer.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+              
+              {userType && userType !== 'driver' && userType !== 'customer' && (
+                <div className="text-sm text-gray-400">
+                  No additional linking required for this role type.
+                </div>
+              )}
+            </div>
+          )}
           
           <div className="flex items-center">
             <input
