@@ -48,5 +48,6 @@ export const roleAccessRules: Record<string, string[]> = {
     "/jobs/new",
     "/jobs/bulk-upload",
     "/jobs/manage",
+    "/jobs/*",
   ]
 };

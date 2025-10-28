@@ -112,19 +112,39 @@ export default function MainNavigation({
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useUser();
 
-// BLOCKLIST MODE: roleAccessRules[role] = array of BLOCKED routes
-const [blockedNav, setBlockedNav] = useState<string[] | null>(null);
+const [blockedNav, setBlockedNav] = useState<string[]>([]); 
+const [isLoading, setIsLoading] = useState(true);
 
 useEffect(() => {
   fetch("/api/navigation", { credentials: "include" })
     .then((res) => res.json())
-    .then((data) => setBlockedNav(data.blockedNav ?? [])) // ensure array
-    .catch(() => setBlockedNav([]));
+    .then((data) => {
+      setBlockedNav(data.blockedNav ?? []); // null-safe
+      setIsLoading(false);
+    })
+    .catch(() => {
+      // Network or API failure – safest fallback
+      setBlockedNav([]); 
+      setIsLoading(false);
+    });
 }, []);
 
+const isBlocked = (href: string): boolean => {
+  // During loading, block everything
+  if (isLoading) return true;
+  return matchesAny(blockedNav, href);
+};
+
+
 // --- utils ---
-const normalize = (path: string) =>
-  (path || "").split("?")[0].replace(/\/+$/, ""); // remove query + trailing slash
+const normalize = (path: string) => {
+  const withoutQuery = (path || "").split("?")[0];
+  // Preserve root path exactly as "/"
+  if (withoutQuery === "/") return "/";
+  // Remove trailing slashes from all other paths
+  return withoutQuery.replace(/\/+$/, "");
+};
+
 
 const matchesAny = (patterns: string[], href: string) => {
   const cleanHref = normalize(href);
@@ -133,32 +153,36 @@ const matchesAny = (patterns: string[], href: string) => {
 
     // wildcard support: "/jobs/*" blocks "/jobs" and any subpath
     if (pat.endsWith("/*")) {
-      const base = pat.slice(0, -2);
-      return cleanHref === base || cleanHref.startsWith(`${base}/`);
-    }
+  const base = pat.slice(0, -2);
+  // Wildcard: block the base path and all its descendants
+  return cleanHref === base || cleanHref.startsWith(`${base}/`);
+}
 
-    // block exact path or any subpath (so "/jobs/manage" blocks "/jobs/manage/edit")
-    return cleanHref === pat || cleanHref.startsWith(`${pat}/`);
+// Non-wildcard: only block exact path
+return cleanHref === pat;
+
   });
 };
 
-const isBlocked = (href: string): boolean =>
-  matchesAny(blockedNav || [], href);
+// const isBlocked = (href: string): boolean =>
+//   matchesAny(blockedNav || [], href);
 
 // --- filter nav (supports children) ---
 const visibleSections = navSections
   .map((section) => ({
     ...section,
     items: section.items
-      ?.map((item) => ({
-        ...item,
-        children: item.children?.filter((child) => !isBlocked(child.href)),
-      }))
-      .filter(
-        (item) =>
-          !isBlocked(item.href) &&
-          (item.children?.length > 0 || !item.children)
-      ),
+  ?.map((item) => ({
+    ...item,
+    children: item.children?.filter((child) => !isBlocked(child.href)),
+  }))
+  .filter((item) => {
+    if (isBlocked(item.href)) return false;
+    if (Array.isArray(item.children)) {
+      return item.children.length > 0;
+    }
+    return true;
+  }),
   }))
   .filter((section) => section.items && section.items.length > 0);
 
