@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createUser, updateUser, getUnassignedDrivers, getUnassignedCustomers, assignCustomerOrDriver } from '@/services/api/userApi';
+import { createUser, updateUser, getUnassignedDrivers, getUnassignedCustomers, assignCustomerOrDriver, getDriverById, getCustomerById } from '@/services/api/userApi';
 import { User, Role } from '@/lib/types';
 import { Driver } from '@/lib/types';
 import { Customer } from '@/types/customer';
@@ -67,10 +67,31 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
         setLoadingDrivers(true);
         try {
           const drivers = await getUnassignedDrivers();
-          setAvailableDrivers(drivers);
+          
+          // If editing existing user with assigned driver, ensure that driver is included
+          if (user && user.driver_id) {
+            // Check if the assigned driver is in the unassigned list
+            const assignedDriverExists = drivers.some(driver => driver.id === user.driver_id);
+            if (!assignedDriverExists) {
+              // If the assigned driver is not in the unassigned list, fetch it separately
+              try {
+                const assignedDriver = await getDriverById(user.driver_id);
+                // Add the assigned driver to the beginning of the list
+                setAvailableDrivers([assignedDriver, ...drivers]);
+              } catch (driverError) {
+                console.error('Error fetching assigned driver:', driverError);
+                // Still set the unassigned drivers list
+                setAvailableDrivers(drivers);
+              }
+            } else {
+              setAvailableDrivers(drivers);
+            }
+          } else {
+            setAvailableDrivers(drivers);
+          }
         } catch (error) {
-          toast.error('Failed to fetch unassigned drivers');
-          console.error('Error fetching unassigned drivers:', error);
+          toast.error('Failed to fetch drivers');
+          console.error('Error fetching drivers:', error);
         } finally {
           setLoadingDrivers(false);
         }
@@ -78,10 +99,31 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
         setLoadingCustomers(true);
         try {
           const customers = await getUnassignedCustomers();
-          setAvailableCustomers(customers);
+          
+          // If editing existing user with assigned customer, ensure that customer is included
+          if (user && user.customer_id) {
+            // Check if the assigned customer is in the unassigned list
+            const assignedCustomerExists = customers.some(customer => customer.id === user.customer_id);
+            if (!assignedCustomerExists) {
+              // If the assigned customer is not in the unassigned list, fetch it separately
+              try {
+                const assignedCustomer = await getCustomerById(user.customer_id);
+                // Add the assigned customer to the beginning of the list
+                setAvailableCustomers([assignedCustomer, ...customers]);
+              } catch (customerError) {
+                console.error('Error fetching assigned customer:', customerError);
+                // Still set the unassigned customers list
+                setAvailableCustomers(customers);
+              }
+            } else {
+              setAvailableCustomers(customers);
+            }
+          } else {
+            setAvailableCustomers(customers);
+          }
         } catch (error) {
-          toast.error('Failed to fetch unassigned customers');
-          console.error('Error fetching unassigned customers:', error);
+          toast.error('Failed to fetch customers');
+          console.error('Error fetching customers:', error);
         } finally {
           setLoadingCustomers(false);
         }
@@ -91,7 +133,7 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
     if (userType) {
       fetchEntities();
     }
-  }, [userType]);
+  }, [userType, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,13 +195,19 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
         toast.success('User created successfully');
       }
       
-      // Assign customer or driver if needed
+    
       if (userType === 'driver' && selectedDriverId) {
-        await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
-        toast.success('Driver assigned successfully');
+       
+        if (!user || user.driver_id !== selectedDriverId) {
+          await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
+          toast.success('Driver assigned successfully');
+        }
       } else if (userType === 'customer' && selectedCustomerId) {
-        await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
-        toast.success('Customer assigned successfully');
+       
+        if (!user || user.customer_id !== selectedCustomerId) {
+          await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
+          toast.success('Customer assigned successfully');
+        }
       }
       
       onSave();

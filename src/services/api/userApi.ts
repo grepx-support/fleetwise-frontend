@@ -127,3 +127,19 @@ export async function getUnassignedCustomers(): Promise<Customer[]> {
   const response = await api.get<Customer[]>('/api/auth/users/unassigned-customers');
   return response.data;
 }
+
+/**
+ * Fetch a specific driver by ID
+ */
+export async function getDriverById(driverId: number): Promise<Driver> {
+  const response = await api.get<Driver>(`/api/drivers/${driverId}`);
+  return response.data;
+}
+
+/**
+ * Fetch a specific customer by ID
+ */
+export async function getCustomerById(customerId: number): Promise<Customer> {
+  const response = await api.get<Customer>(`/api/customers/${customerId}`);
+  return response.data;
+}
