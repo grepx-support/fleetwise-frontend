@@ -45,7 +45,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response: AxiosResponse) => {
     // Only log in development
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' ) {
       console.log(`API Response: ${response.status} ${response.config.url}`);
     }
     return response;
@@ -78,7 +78,10 @@ api.interceptors.response.use(
         msg = 'Scheduling conflict detected. Please select a different date or time.';
       }
       
-      console.error('API Error Response:', data);
+     if (data && typeof data === "object" && Object.keys(data).length > 0) {
+  console.error("API Error Response:", data);
+}
+
       
       // Create a special error object for 409 conflicts
       if (error.response.status === 409) {

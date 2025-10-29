@@ -11,12 +11,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
-  const { login, isLoggedIn, isLoading } = useUser();
+  const { login, isLoggedIn, isLoading, user } = useUser();
+  const role =
+  Array.isArray(user?.roles) && user.roles.length > 0
+    ? (typeof user.roles[0] === 'string'
+        ? user.roles[0]
+        : user.roles[0]?.name || user.roles[0]?.role || 'guest'
+      ).toLowerCase()
+    : 'guest';
 
   // Redirect if already logged in
   useEffect(() => {
-    if (!isLoading && isLoggedIn) {
-      router.replace('/dashboard');
+    if (!isLoading && isLoggedIn && user) {
+if (role === 'admin') {
+  router.replace('/dashboard');
+} else {
+  router.replace('/jobs');
+}
     }
   }, [isLoggedIn, isLoading, router]);
 
@@ -41,9 +52,12 @@ export default function LoginPage() {
       const success = await login(email, password);
       setLoading(false);
       
-      if (success) {
-        // Successful login, redirect to dashboard
-        router.replace('/dashboard');
+      if (success && user) {
+       if (user.role === 'admin') {
+          router.replace('/dashboard');
+        } else {
+          router.replace('/jobs');
+        }
       } else {
         setError('Invalid email or password');
       }
