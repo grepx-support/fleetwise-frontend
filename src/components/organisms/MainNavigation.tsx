@@ -60,7 +60,6 @@ const navSections: NavSection[] = [
           { label: "Jobs Audit Trail", href: "/jobs/audit-trail", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, description: "View job change history" },
         ]
       },
-      // { label: "Billing", href: "/billing", icon: <CurrencyDollarIcon className="w-5 h-5" />, description: "Manage jobs billing" },
       {
         label: "Billing",
         href: "/billing",
@@ -68,9 +67,16 @@ const navSections: NavSection[] = [
         description: "Manage jobs billing",
         children: [
           { label: "Customer Billing", href: "/billing/customer-billing", icon: <DocumentDuplicateIcon className="w-4 h-4" />, description: "Customer billing management" },
-          { label: "Internal Driver Billing", href: "/billing/driver-billing", icon: <WalletIcon className="w-4 h-4" />, description: "Manage driver payments" },
-          { label: "Contractor Billing", href: "/billing/contractor-billing", icon: <WalletIcon className="w-4 h-4" />, description: "Manage contractor payments" },
-          
+        ]
+      },
+      {
+        label: "Cost Summary",
+        href: "/cost-summary",
+        icon: <WalletIcon className="w-5 h-5" />,
+        description: "View cost summaries",
+        children: [
+          { label: "Generate Contractor Cost", href: "/billing/contractor-billing", icon: <WalletIcon className="w-4 h-4" />, description: "Generate contractor costs" },
+          { label: "Generate Driver Claim", href: "/billing/driver-billing", icon: <WalletIcon className="w-4 h-4" />, description: "Generate driver claims" },
         ]
       },
     ]
