@@ -18,7 +18,7 @@ export function generateJobSummary(job: Job | ApiJob): string {
   }
 
   // SIXT Booking Reference
-  if (job.reference) {
+  if ('reference' in job && job.reference) {
     lines.push(`SIXT Booking Reference: ${job.reference}`);
   }
 
@@ -63,8 +63,8 @@ export function generateJobSummary(job: Job | ApiJob): string {
 
   // Driver Notes
   // Implement fallback logic as specified in acceptance criteria
-  if (job.remarks || (job as any).customer_remark) {
-    lines.push(`Driver Notes: ${job.remarks || (job as any).customer_remark}`);
+  if (('remarks' in job && job.remarks) || (job as any).customer_remark) {
+    lines.push(`Driver Notes: ${('remarks' in job && job.remarks) || (job as any).customer_remark}`);
   }
 
   return lines.join('\n');
