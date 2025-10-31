@@ -310,9 +310,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
 
 useEffect(() => {
   return () => {
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-    }
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    if (aiToastId.current) toast.dismiss(aiToastId.current);
   };
 }, []);
 
@@ -339,7 +338,7 @@ const handleAISuggestDriver = async (retryCount = 0) => {
     // Case 1: Workflow complete or skipped
     if (data.status === "ok" || data.status === "skipped") {
       if (aiToastId.current) toast.dismiss(aiToastId.current); // 🧹 clear old "processing" toast
-
+      aiToastId.current = null;
       const topDriver = data.best_driver || data.ranking?.[0];
 
 if (!topDriver) {
@@ -369,16 +368,15 @@ return }
     if (data.status === "processing") {
       // If first time processing, create a loading toast and store its id
       if (!aiToastId.current) {
-        aiToastId.current = toast.loading(`AI processing new data… (${retryCount + 1}/3)`);
+        aiToastId.current = toast.loading(`AI processing new data… (${retryCount + 1}/${AI_MAX_RETRIES})`);
       } else {
         // Update existing toast instead of stacking new ones
-        toast.loading(`AI processing new data… (${retryCount + 1}/3)`, { id: aiToastId.current });
+        toast.loading(`AI processing new data… (${retryCount + 1}/${AI_MAX_RETRIES})`, { id: aiToastId.current });
       }
 
       if (retryCount < AI_MAX_RETRIES) {
-    console.log(`AI retry #${retryCount + 1}`);
+    console.log(`AI retry #${retryCount}`);
     
-    // 🔧 ADD THESE THREE LINES HERE:
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
     }
@@ -387,9 +385,11 @@ return }
       AI_RETRY_DELAY_MS
     );
   } else {
+    toast.dismiss(aiToastId.current);
     toast.error("AI still processing. Please try again later.");
     aiToastId.current = null;
   }
+  setIsAiLoading(false);
       return;
     }
 
