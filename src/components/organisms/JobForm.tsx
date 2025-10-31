@@ -314,14 +314,22 @@ const handleAISuggestDriver = async (retryCount = 0) => {
       if (aiToastId) toast.dismiss(aiToastId); // 🧹 clear old "processing" toast
 
       const topDriver = data.best_driver || data.ranking?.[0];
-      if (topDriver) {
-        handleInputChange("driver_id", topDriver.driver_id);
-        toast.success(`🤖 AI selected: ${topDriver.name}`);
-      } else {
-        toast.error("No driver found in ranking result.");
-      }
-      return;
-    }
+
+if (!topDriver) {
+  toast.error("⚠️ No driver recommendation found");
+  return;
+}
+
+// enforce lock check before updating
+if (!isFieldLocked("driver_id")) {
+  handleInputChange("driver_id", topDriver.driver_id);
+  toast.success(`🤖 AI selected: ${topDriver.name}`);
+} else {
+  toast.error("🔒 Driver field is locked and cannot be modified");
+}
+return }
+
+      
 
     // ⚙️ Case 2: Still processing
     if (data.status === "processing") {
