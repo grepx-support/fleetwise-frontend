@@ -32,6 +32,8 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [driversError, setDriversError] = useState<string | null>(null);
+  const [customersError, setCustomersError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -58,74 +60,80 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
       setSelectedDriverId(null);
       setSelectedCustomerId(null);
     }
-  }, [user]);
+  }, [user, roles]);
 
   // Fetch available drivers or customers when user type changes
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchEntities = async () => {
       if (userType === 'driver') {
-        setLoadingDrivers(true);
+        if (isMounted) {
+          setLoadingDrivers(true);
+          setDriversError(null); // Clear previous errors
+        }
         try {
           const drivers = await getUnassignedDrivers();
           
-          // If editing existing user with assigned driver, ensure that driver is included
-          if (user && user.driver_id) {
-            // Check if the assigned driver is in the unassigned list
-            const assignedDriverExists = drivers.some(driver => driver.id === user.driver_id);
-            if (!assignedDriverExists) {
-              // If the assigned driver is not in the unassigned list, fetch it separately
-              try {
-                const assignedDriver = await getDriverById(user.driver_id);
-                // Add the assigned driver to the beginning of the list
-                setAvailableDrivers([assignedDriver, ...drivers]);
-              } catch (driverError) {
-                console.error('Error fetching assigned driver:', driverError);
-                // Still set the unassigned drivers list
-                setAvailableDrivers(drivers);
+          // Include current driver if editing
+          let finalDrivers = drivers;
+          if (user?.driver_id) {
+            try {
+              const currentDriver = await getDriverById(user.driver_id);
+              if (currentDriver && isMounted) {
+                finalDrivers = [currentDriver, ...drivers.filter(d => d.id !== currentDriver.id)];
               }
-            } else {
-              setAvailableDrivers(drivers);
+            } catch (error) {
+              console.error('Error fetching current driver:', error);
             }
-          } else {
-            setAvailableDrivers(drivers);
+          }
+          
+          if (isMounted) {
+            setAvailableDrivers(finalDrivers);
           }
         } catch (error) {
-          toast.error('Failed to fetch drivers');
-          console.error('Error fetching drivers:', error);
+          if (isMounted) {
+            setDriversError('Failed to load drivers');
+            toast.error('Failed to fetch unassigned drivers');
+          }
         } finally {
-          setLoadingDrivers(false);
+          if (isMounted) {
+            setLoadingDrivers(false);
+          }
         }
       } else if (userType === 'customer') {
-        setLoadingCustomers(true);
+        if (isMounted) {
+          setLoadingCustomers(true);
+          setCustomersError(null); // Clear previous errors
+        }
         try {
           const customers = await getUnassignedCustomers();
           
-          // If editing existing user with assigned customer, ensure that customer is included
-          if (user && user.customer_id) {
-            // Check if the assigned customer is in the unassigned list
-            const assignedCustomerExists = customers.some(customer => customer.id === user.customer_id);
-            if (!assignedCustomerExists) {
-              // If the assigned customer is not in the unassigned list, fetch it separately
-              try {
-                const assignedCustomer = await getCustomerById(user.customer_id);
-                // Add the assigned customer to the beginning of the list
-                setAvailableCustomers([assignedCustomer, ...customers]);
-              } catch (customerError) {
-                console.error('Error fetching assigned customer:', customerError);
-                // Still set the unassigned customers list
-                setAvailableCustomers(customers);
+          // Include current customer if editing
+          let finalCustomers = customers;
+          if (user?.customer_id) {
+            try {
+              const currentCustomer = await getCustomerById(user.customer_id);
+              if (currentCustomer && isMounted) {
+                finalCustomers = [currentCustomer, ...customers.filter(c => c.id !== currentCustomer.id)];
               }
-            } else {
-              setAvailableCustomers(customers);
+            } catch (error) {
+              console.error('Error fetching current customer:', error);
             }
-          } else {
-            setAvailableCustomers(customers);
+          }
+          
+          if (isMounted) {
+            setAvailableCustomers(finalCustomers);
           }
         } catch (error) {
-          toast.error('Failed to fetch customers');
-          console.error('Error fetching customers:', error);
+          if (isMounted) {
+            setCustomersError('Failed to load customers');
+            toast.error('Failed to fetch unassigned customers');
+          }
         } finally {
-          setLoadingCustomers(false);
+          if (isMounted) {
+            setLoadingCustomers(false);
+          }
         }
       }
     };
@@ -133,7 +141,11 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
     if (userType) {
       fetchEntities();
     }
-  }, [userType, user]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [userType, user?.driver_id, user?.customer_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,9 +186,50 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
           role_names: selectedRoleId ? [roles.find(role => role.id === selectedRoleId)?.name].filter(Boolean) : []
         };
         
-        const updatedUser = await updateUser(user.id, userData);
-        userId = updatedUser.id;
-        toast.success('User updated successfully');
+        try {
+          const updatedUser = await updateUser(user.id, userData);
+          userId = updatedUser.id;
+        } catch (error) {
+          toast.error('Failed to update user');
+          throw error;
+        }
+        
+        // Handle assignment updates for existing user
+        let assignmentSuccess = false;
+        
+        if (userType === 'driver' && selectedDriverId) {
+          if (!user || user.driver_id !== selectedDriverId) {
+            try {
+              await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
+              assignmentSuccess = true;
+            } catch (error) {
+              toast.error('User updated but driver assignment failed.');
+              console.error('Driver assignment error:', error);
+            }
+          } else {
+            assignmentSuccess = true; // No change needed
+          }
+        } else if (userType === 'customer' && selectedCustomerId) {
+          if (!user || user.customer_id !== selectedCustomerId) {
+            try {
+              await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
+              assignmentSuccess = true;
+            } catch (error) {
+              toast.error('User updated but customer assignment failed.');
+              console.error('Customer assignment error:', error);
+            }
+          } else {
+            assignmentSuccess = true; // No change needed
+          }
+        }
+        
+        if (assignmentSuccess) {
+          if (userType) {
+            toast.success('User and assignment updated successfully');
+          } else {
+            toast.success('User updated successfully');
+          }
+        }
       } else {
         // Create new user
         const userData: any = {
@@ -190,30 +243,42 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
           userData.password = password;
         }
         
-        const newUser = await createUser(userData);
-        userId = newUser.id;
-        toast.success('User created successfully');
-      }
-      
-    
-      if (userType === 'driver' && selectedDriverId) {
-       
-        if (!user || user.driver_id !== selectedDriverId) {
-          await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
-          toast.success('Driver assigned successfully');
+        try {
+          const newUser = await createUser(userData);
+          userId = newUser.id;
+        } catch (error) {
+          toast.error('Failed to create user');
+          throw error;
         }
-      } else if (userType === 'customer' && selectedCustomerId) {
-       
-        if (!user || user.customer_id !== selectedCustomerId) {
-          await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
-          toast.success('Customer assigned successfully');
+        
+        // Handle user assignment for new user
+        if (userType === 'driver' && selectedDriverId) {
+          try {
+            await assignCustomerOrDriver(userId, 'driver', selectedDriverId);
+            toast.success('User created and driver assigned successfully');
+          } catch (error) {
+            toast.error('User created but driver assignment failed. Please assign manually from edit.');
+            console.error('Driver assignment error:', error);
+            // Don't throw - user is created, allow modal to close
+          }
+        } else if (userType === 'customer' && selectedCustomerId) {
+          try {
+            await assignCustomerOrDriver(userId, 'customer', selectedCustomerId);
+            toast.success('User created and customer assigned successfully');
+          } catch (error) {
+            toast.error('User created but customer assignment failed. Please assign manually from edit.');
+            console.error('Customer assignment error:', error);
+            // Don't throw - user is created, allow modal to close
+          }
+        } else {
+          toast.success('User created successfully');
         }
       }
       
       onSave();
       onClose();
     } catch (error) {
-      toast.error(user ? 'Failed to update user' : 'Failed to create user');
+      // Error messages are already handled above
       console.error('Error saving user:', error);
     } finally {
       setLoading(false);
@@ -227,12 +292,17 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
     // Set user type based on role
     const role = roles.find(r => r.id === roleId);
     if (role) {
-      if (role.name.toLowerCase() === 'driver') {
+      const normalizedName = role.name.trim().toLowerCase();
+      if (normalizedName === 'driver') {
         setUserType('driver');
-      } else if (role.name.toLowerCase() === 'customer') {
+        setSelectedCustomerId(null);
+      } else if (normalizedName === 'customer') {
         setUserType('customer');
+        setSelectedDriverId(null);
       } else {
         setUserType(null);
+        setSelectedDriverId(null);
+        setSelectedCustomerId(null);
       }
     }
   };
@@ -363,18 +433,36 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
                       <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500"></div>
                     </div>
                   ) : (
-                    <select
-                      value={selectedDriverId || ''}
-                      onChange={(e) => setSelectedDriverId(Number(e.target.value) || null)}
-                      className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select a driver</option>
-                      {availableDrivers.map((driver) => (
-                        <option key={driver.id} value={driver.id}>
-                          {driver.name} {driver.email ? `(${driver.email})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      {driversError && (
+                        <div className="text-red-400 text-sm mb-2">
+                          {driversError}.{' '}
+                          <button
+                            onClick={() => {
+                              // Trigger re-fetch by temporarily clearing userType
+                              const tempUserType = userType;
+                              setUserType(null);
+                              setTimeout(() => setUserType(tempUserType), 0);
+                            }}
+                            className="text-blue-400 underline hover:text-blue-300"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      <select
+                        value={selectedDriverId || ''}
+                        onChange={(e) => setSelectedDriverId(Number(e.target.value) || null)}
+                        className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">Select a driver</option>
+                        {availableDrivers.map((driver) => (
+                          <option key={driver.id} value={driver.id}>
+                            {driver.name} {driver.email ? `(${driver.email})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </>
                   )}
                 </div>
               )}
@@ -389,18 +477,36 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
                       <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500"></div>
                     </div>
                   ) : (
-                    <select
-                      value={selectedCustomerId || ''}
-                      onChange={(e) => setSelectedCustomerId(Number(e.target.value) || null)}
-                      className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select a customer</option>
-                      {availableCustomers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.name} {customer.email ? `(${customer.email})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      {customersError && (
+                        <div className="text-red-400 text-sm mb-2">
+                          {customersError}.{' '}
+                          <button
+                            onClick={() => {
+                              // Trigger re-fetch by temporarily clearing userType
+                              const tempUserType = userType;
+                              setUserType(null);
+                              setTimeout(() => setUserType(tempUserType), 0);
+                            }}
+                            className="text-blue-400 underline hover:text-blue-300"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      <select
+                        value={selectedCustomerId || ''}
+                        onChange={(e) => setSelectedCustomerId(Number(e.target.value) || null)}
+                        className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">Select a customer</option>
+                        {availableCustomers.map((customer) => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.name} {customer.email ? `(${customer.email})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </>
                   )}
                 </div>
               )}
@@ -437,7 +543,7 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium shadow transition-colors flex items-center"
+              className={`px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium shadow transition-colors flex items-center ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
               disabled={loading}
             >
               {loading && (
@@ -446,7 +552,7 @@ export default function UserModal({ user, roles, onClose, onSave }: UserModalPro
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               )}
-              {user ? 'Update' : 'Create'}
+              {loading ? 'Saving...' : user ? 'Update' : 'Create'} User
             </button>
           </div>
         </form>
