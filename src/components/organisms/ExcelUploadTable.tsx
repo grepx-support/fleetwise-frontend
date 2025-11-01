@@ -1185,16 +1185,21 @@ function EditForm({
   }, [userRole, user, referenceData.customers]);
 
   const filteredContractors = useMemo(() => {
-    let agInternal = referenceData.contractors.find(c => 
-      ['ag', 'ag (internal)'].includes(c.name.toLowerCase())
-    );
-    if (!agInternal) {
-      agInternal = referenceData.contractors.find(c => 
-        c.name.toLowerCase().includes('ag')
+    // For customer users, only show AG (Internal)
+    if (userRole === 'customer') {
+      let agInternal = referenceData.contractors.find(c =>
+        ['ag', 'ag (internal)'].includes(c.name.toLowerCase())
       );
+      if (!agInternal) {
+        agInternal = referenceData.contractors.find(c =>
+          c.name.toLowerCase().includes('ag')
+        );
+      }
+      return agInternal ? [agInternal] : [];
     }
-    return agInternal ? [agInternal] : [];
-  }, [referenceData.contractors]);
+    // For admin users, show all contractors
+    return referenceData.contractors;
+  }, [referenceData.contractors, userRole]);
 
   const validateField = useCallback((field: string, value: any) => {
     const errors: Record<string, string> = { ...validationErrors };
@@ -1555,7 +1560,7 @@ function EditForm({
                   })()}
                   onChange={handleContractorChange}
                   className={selectClassName}
-                  disabled={filteredContractors.length === 1}
+                  disabled={userRole === 'customer' && filteredContractors.length === 1}
                 >
                   <option value="">Select Contractor</option>
                   {filteredContractors.map(contractor => (
