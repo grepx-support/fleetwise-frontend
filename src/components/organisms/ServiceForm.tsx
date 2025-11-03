@@ -48,8 +48,46 @@ export default function ServiceForm({ initialData, onSubmit, onCancel, onClose, 
     },
   });
 
+  // State for real-time JSON validation feedback
+  const [configError, setConfigError] = React.useState<string | null>(null);
+
   const isAncillary = watch('is_ancillary');
   const conditionType = watch('condition_type');
+
+  // Real-time JSON validation for condition_config
+  const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setValue('condition_config', value);
+
+    // Real-time JSON validation feedback
+    if (value) {
+      try {
+        const parsed = JSON.parse(value);
+        if (conditionType === 'time_range') {
+          if (!parsed.start_time || !parsed.end_time) {
+            setConfigError('Missing required fields: start_time, end_time');
+          } else if (!/^\d{2}:\d{2}$/.test(parsed.start_time) || !/^\d{2}:\d{2}$/.test(parsed.end_time)) {
+            setConfigError('Times must be in HH:MM format');
+          } else {
+            setConfigError(null);
+          }
+        }
+        if (conditionType === 'additional_stops') {
+          if (typeof parsed.trigger_count !== 'number') {
+            setConfigError('trigger_count must be a number');
+          } else if (parsed.trigger_count < 0) {
+            setConfigError('trigger_count must be non-negative');
+          } else {
+            setConfigError(null);
+          }
+        }
+      } catch {
+        setConfigError('Invalid JSON format');
+      }
+    } else {
+      setConfigError(null);
+    }
+  };
 
   const handleFormSubmit = async (data: ServiceFormValues) => {
     // Ensure all numeric fields have values
@@ -195,10 +233,12 @@ export default function ServiceForm({ initialData, onSubmit, onCancel, onClose, 
                     <span className="text-gray-500 text-sm ml-2">(JSON format: {`{"start_time": "00:00", "end_time": "06:00"}`})</span>
                   </label>
                   <input
-                    {...register("condition_config")}
+                    value={watch('condition_config') || ''}
+                    onChange={handleConfigChange}
                     placeholder='{"start_time": "00:00", "end_time": "06:00"}'
                     className="w-full px-3 py-2 rounded bg-gray-700 text-white border border-gray-600 font-mono text-sm"
                   />
+                  {configError && <span className="text-yellow-400 text-sm">{configError}</span>}
                   {errors.condition_config && <span className="text-red-400 text-sm">{errors.condition_config.message}</span>}
                 </div>
               )}
@@ -211,10 +251,12 @@ export default function ServiceForm({ initialData, onSubmit, onCancel, onClose, 
                       <span className="text-gray-500 text-sm ml-2">(JSON format: {`{"trigger_count": 1}`} - applies when dropoffs exceed this count)</span>
                     </label>
                     <input
-                      {...register("condition_config")}
+                      value={watch('condition_config') || ''}
+                      onChange={handleConfigChange}
                       placeholder='{"trigger_count": 1}'
                       className="w-full px-3 py-2 rounded bg-gray-700 text-white border border-gray-600 font-mono text-sm"
                     />
+                    {configError && <span className="text-yellow-400 text-sm">{configError}</span>}
                     {errors.condition_config && <span className="text-red-400 text-sm">{errors.condition_config.message}</span>}
                   </div>
 

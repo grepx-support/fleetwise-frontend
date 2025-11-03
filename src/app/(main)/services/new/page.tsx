@@ -41,6 +41,8 @@ export default function NewServicePage() {
           getSuccess: (result) => result.message || 'Service created successfully!'
         },
         async () => {
+          // Small delay to ensure cache invalidation and DB write propagates
+          await new Promise(resolve => setTimeout(resolve, 100));
           router.push("/services");
         }
       );
