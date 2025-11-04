@@ -15,7 +15,7 @@ interface StatusTransition {
   from: JobStatus;
   to: JobStatus;
   selected: boolean;
-  datetime: string; // Combined datetime in ISO format: YYYY-MM-DDTHH:MM
+  datetime: string;
   remark: string;
 }
 
@@ -38,15 +38,15 @@ const getNextValidStatuses = (currentStatus: JobStatus): JobStatus[] => {
     case 'pending':
       return ['confirmed'];
     case 'confirmed':
-      return ['otw'];
+      return ['otw', 'ots', 'pob', 'jc', 'sd'];
     case 'otw':
-      return ['ots'];
+      return ['ots', 'pob', 'jc', 'sd'];
     case 'ots':
-      return ['pob'];
+      return ['pob', 'jc', 'sd'];
     case 'pob':
-      return ['jc'];
+      return ['jc', 'sd']; 
     case 'jc':
-      return [];
+      return ['sd']; 
     case 'sd':
     case 'canceled':
       return [];
@@ -56,31 +56,24 @@ const getNextValidStatuses = (currentStatus: JobStatus): JobStatus[] => {
 };
 
 const getStatusChain = (currentStatus: JobStatus): { from: JobStatus; to: JobStatus }[] => {
-  const baseChain: { from: JobStatus; to: JobStatus }[] = [
-    { from: 'confirmed', to: 'otw' },
-    { from: 'otw', to: 'ots' },
-    { from: 'ots', to: 'pob' },
-    { from: 'pob', to: 'jc' }
-  ];
+  const nextStatuses = getNextValidStatuses(currentStatus);
   
-  // Add pending to confirmed transition if current status is pending
-  if (currentStatus === 'pending') {
-    return [{ from: 'pending', to: 'confirmed' }, ...baseChain];
-  }
+  const transitions = nextStatuses.map(to => ({
+    from: currentStatus,
+    to
+  }));
   
-  // Add new to confirmed transition if current status is new
-  if (currentStatus === 'new') {
-    return [{ from: 'new', to: 'confirmed' }, ...baseChain];
-  }
-  
-  return baseChain;
+  return transitions;
 };
 
-// Convert 24-hour time to 12-hour format with AM/PM
 const formatTo12Hour = (datetime: string): string => {
   if (!datetime) return '';
-  
   const date = new Date(datetime);
+  
+  if (isNaN(date.getTime())) {
+    return 'Invalid date';
+  }
+  
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
@@ -89,9 +82,8 @@ const formatTo12Hour = (datetime: string): string => {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const period = hours >= 12 ? 'PM' : 'AM';
   
-  // Convert to 12-hour format
   hours = hours % 12;
-  hours = hours ? hours : 12; // 0 should be 12
+  hours = hours ? hours : 12;
   const displayHours = String(hours).padStart(2, '0');
   
   return `${day}/${month}/${year} ${displayHours}:${minutes} ${period}`;
@@ -107,6 +99,10 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
   const [transitions, setTransitions] = useState<StatusTransition[]>([]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    
+
+    
     const statusChain = getStatusChain(job.status);
     setTransitions(statusChain.map(transition => {
       const now = new Date();
@@ -126,7 +122,7 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
         remark: ''
       };
     }));
-  }, [job.status]);
+  }, [job.status, isOpen]);
 
   const handleTransitionChange = (index: number, field: keyof StatusTransition, value: any) => {
     setTransitions(prev => {
@@ -143,8 +139,28 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
     })));
   };
 
+  // Get the last status change timestamp
+  const getLastStatusChangeTime = (): Date | null => {
+    if (!job.status_history || job.status_history.length === 0) {
+      return null;
+    }
+    
+    // Sort by timestamp descending to get the most recent
+    const sortedHistory = [...job.status_history].sort((a, b) => {
+      const dateA = new Date(a.timestamp);
+      const dateB = new Date(b.timestamp);
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    const lastChange = sortedHistory[0];
+    const lastChangeDate = new Date(lastChange.timestamp);
+    
+    return lastChangeDate;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     const selectedTransitions = transitions.filter(t => t.selected);
     
     if (selectedTransitions.length === 0) {
@@ -152,24 +168,122 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      for (const transition of selectedTransitions) {
-        // Format datetime for remark in 12-hour format with AM/PM
-        const formattedDateTime = formatTo12Hour(transition.datetime);
-        const remark = transition.remark ? `${transition.remark} (${formattedDateTime})` : formattedDateTime;
-        await updateJobStatus(job.id, transition.to, remark);
+    // Validate that all selected transitions have valid dates
+    for (const transition of selectedTransitions) {
+      const date = new Date(transition.datetime);
+      if (isNaN(date.getTime())) {
+
+        toast.error(`Invalid datetime for ${statusLabels[transition.to]} transition`);
+        return;
       }
+    }
+
+    const lastStatusChangeTime = getLastStatusChangeTime();
+    
+
+
+    // Validate that timestamps are after the last status change (if exists)
+    if (lastStatusChangeTime) {
+      for (const transition of selectedTransitions) {
+        const transitionDate = new Date(transition.datetime);
+        
+        // Must be strictly after the last status change time
+        if (transitionDate <= lastStatusChangeTime) {
+          toast.error(
+            `${statusLabels[transition.to]} timestamp must be AFTER the last status change.\n\n` +
+            `Last change: ${formatTo12Hour(lastStatusChangeTime.toISOString())}\n` +
+            `Your selection: ${formatTo12Hour(transition.datetime)}\n\n` +
+            `Please select a time after the last change.`
+          );
+          return;
+        }
+        
+
+      }
+    }
+
+    // Sort selected transitions by datetime to validate chronological order
+    const sortedTransitions = [...selectedTransitions].sort((a, b) => {
+      const dateA = new Date(a.datetime);
+      const dateB = new Date(b.datetime);
+      return dateA.getTime() - dateB.getTime();
+    });
+
+    // Validate chronological ordering between selected transitions
+    for (let i = 1; i < sortedTransitions.length; i++) {
+      const prevDate = new Date(sortedTransitions[i - 1].datetime);
+      const currDate = new Date(sortedTransitions[i].datetime);
       
-      toast.success('Job status updated successfully');
-      onStatusUpdated();
-      onClose();
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to update job status');
+      if (currDate <= prevDate) {
+        toast.error(
+          `Invalid timeline: ${statusLabels[sortedTransitions[i].to]} timestamp ` +
+          `(${formatTo12Hour(sortedTransitions[i].datetime)}) must be after ` +
+          `${statusLabels[sortedTransitions[i - 1].to]} ` +
+          `(${formatTo12Hour(sortedTransitions[i - 1].datetime)}).`
+        );
+        return;
+      }
+    }
+
+    // Validate that no future dates are selected
+    const now = new Date();
+    for (const transition of selectedTransitions) {
+      const date = new Date(transition.datetime);
+      if (date > now) {
+        toast.error(
+          `Cannot set future timestamp for ${statusLabels[transition.to]}. ` +
+          `Please use current or past datetime.`
+        );
+        return;
+      }
+    }
+
+    // Proceeding to update status...
+
+    setIsSubmitting(true);
+    const results: { transition: StatusTransition; success: boolean; error?: string }[] = [];
+
+    try {
+      for (let i = 0; i < selectedTransitions.length; i++) {
+        const transition = selectedTransitions[i];
+        try {
+          const remark = transition.remark || '';
+          const changedAt = transition.datetime || '';
+          
+          await updateJobStatus(job.id, transition.to, remark, changedAt);
+          results.push({ transition, success: true });
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+          results.push({ transition, success: false, error: errorMsg });
+          
+          const successCount = results.filter(r => r.success).length;
+          toast.error(
+            `Failed at transition ${i + 1}/${selectedTransitions.length}: ${statusLabels[transition.from]} → ${statusLabels[transition.to]}. ` +
+            `${successCount} transition(s) completed. Please refresh the page and verify job status before retrying. Error: ${errorMsg}`
+          );
+          break;
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      if (successCount === selectedTransitions.length) {
+
+        toast.success(`Successfully updated ${successCount} status transition(s)`);
+        onStatusUpdated();
+        onClose();
+      } else if (successCount > 0) {
+
+        toast.success(`Please check: ${successCount}/${selectedTransitions.length} transitions updated. Refresh to verify job status.`);
+        onStatusUpdated(); 
+      }
+    } catch (error) {
+      toast.error('Unexpected error during status update. Please refresh and try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const lastStatusChangeTime = getLastStatusChangeTime();
 
   if (!isOpen) return null;
 
@@ -178,7 +292,7 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-background-light border border-border-color rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4 animate-fade-in" role="dialog" aria-modal="true">
+      <div className="bg-background-light border border-border-color rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto animate-fade-in" role="dialog" aria-modal="true">
         <h2 className="text-lg font-bold text-text-main mb-2">
           {isCanceled ? `Job Status - Canceled (Job #${job.id})` : `Update Job Status (Job #${job.id})`}
         </h2>
@@ -194,9 +308,22 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
           </div>
         ) : (
           <>
-            <p className="text-text-secondary mb-4">
+            <p className="text-text-secondary mb-2">
               Current status: <span className="font-semibold">{statusLabels[job.status]}</span>
             </p>
+            
+            {lastStatusChangeTime && (
+              <div className="text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 p-3 rounded mb-4">
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">ℹ️</span>
+                  <div>
+                    <p className="font-semibold mb-1">Important:</p>
+                    <p>Last status change was at <strong>{formatTo12Hour(lastStatusChangeTime.toISOString())}</strong></p>
+                    <p className="mt-1">New status timestamp must be set to a time <strong>AFTER</strong> this.</p>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
@@ -231,7 +358,8 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
                               type="checkbox"
                               checked={transition.selected}
                               onChange={(e) => handleTransitionChange(index, 'selected', e.target.checked)}
-                              className="form-checkbox h-4 w-4 text-primary bg-background-light border-border-color rounded focus:ring-primary"
+                              disabled={isSubmitting}
+                              className="form-checkbox h-4 w-4 text-primary bg-background-light border-border-color rounded focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                           </td>
                           <td className="p-2">
@@ -247,7 +375,8 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
                                 type="datetime-local"
                                 value={transition.datetime}
                                 onChange={(e) => handleTransitionChange(index, 'datetime', e.target.value)}
-                                className="w-full rounded-lg px-2 py-1 text-xs transition-colors bg-background-light border border-border-color text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                disabled={isSubmitting}
+                                className="w-full rounded-lg px-2 py-1 text-xs transition-colors bg-background-light border border-border-color text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                               />
                               {transition.datetime && (
                                 <div className="text-[10px] text-text-secondary mt-1">
@@ -262,7 +391,8 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
                               value={transition.remark}
                               onChange={(e) => handleTransitionChange(index, 'remark', e.target.value)}
                               placeholder="Add remark..."
-                              className="w-full rounded-lg px-2 py-1 text-xs transition-colors bg-background-light border border-border-color text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                              disabled={isSubmitting}
+                              className="w-full rounded-lg px-2 py-1 text-xs transition-colors bg-background-light border border-border-color text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                           </td>
                         </tr>

@@ -355,10 +355,11 @@ export async function getJobAuditTrail(jobId: number): Promise<JobAuditTrailResp
 }
 
 /** Update job status */
-export async function updateJobStatus(jobId: number, newStatus: string, remark?: string): Promise<any> {
+export async function updateJobStatus(jobId: number, newStatus: string, remark?: string, changedAt?: string): Promise<any> {
   const response = await api.post(`/api/jobs/update_status/${jobId}`, {
     new_status: newStatus,
-    remark: remark
+    remark: remark,
+    changed_at: changedAt
   });
   return response.data;
 }
