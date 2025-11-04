@@ -366,6 +366,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   const [userModifiedPricing, setUserModifiedPricing] = useState<boolean>(false);
   const [initialFormData, setInitialFormData] = useState<Partial<JobFormData> | null>(null);
   const [toastState, setToastState] = useState<string | null>(null);
+  const [userModifiedLocationPrices, setUserModifiedLocationPrices] = useState<Set<string>>(new Set());
 
   // Get current date and time for defaults
   const getCurrentDateTime = () => {
@@ -1161,16 +1162,13 @@ const JobForm: React.FC<JobFormProps> = (props) => {
 
   // Calculate additional stops surcharge for use as default price in location fields
   const calculatedAdditionalStopsSurcharge = useMemo(() => {
-    // Count actual non-empty dropoff/pickup fields
+    // Count actual non-empty dropoff fields (align with backend logic - only count dropoffs)
     const actualDropoffCount = [1, 2, 3, 4, 5].reduce((count, i) => {
       return count + (formData[`dropoff_loc${i}` as keyof JobFormData] ? 1 : 0);
     }, 0);
-    const actualPickupCount = [1, 2, 3, 4, 5].reduce((count, i) => {
-      return count + (formData[`pickup_loc${i}` as keyof JobFormData] ? 1 : 0);
-    }, 0);
 
     const surcharge = calculateAdditionalStopsSurcharge(
-      Math.max(actualPickupCount, actualDropoffCount),
+      actualDropoffCount, // Align with backend - only count dropoffs
       customerAdditionalStopsPricing,
       additionalStopsPricing,
       formData.vehicle_type_id,
@@ -1179,9 +1177,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     );
 
     console.log('[Calculated Additional Stops Surcharge]', {
-      pickupCount: actualPickupCount,
       dropoffCount: actualDropoffCount,
-      maxCount: Math.max(actualPickupCount, actualDropoffCount),
       vehicleTypeId: formData.vehicle_type_id,
       customerPricing: customerAdditionalStopsPricing,
       servicePricing: additionalStopsPricing,
@@ -1193,7 +1189,6 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     return surcharge;
   }, [
     formData.dropoff_loc1, formData.dropoff_loc2, formData.dropoff_loc3, formData.dropoff_loc4, formData.dropoff_loc5,
-    formData.pickup_loc1, formData.pickup_loc2, formData.pickup_loc3, formData.pickup_loc4, formData.pickup_loc5,
     formData.vehicle_type_id,
     customerAdditionalStopsPricing,
     additionalStopsPricing,
@@ -1236,6 +1231,12 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       setUserModifiedPricing(true);
     }
     
+    // Track user-modified location prices
+    if (field.endsWith('_price') && 
+        (field.startsWith('pickup_loc') || field.startsWith('dropoff_loc'))) {
+      setUserModifiedLocationPrices(prev => new Set(prev).add(field));
+    }
+    
     // Track user input timestamps for location fields
     if (field === 'pickup_location') {
       userLocationTimestamps.current.pickup = Date.now();
@@ -1268,7 +1269,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         return;
       }
     }
-    
+
     // Auto-populate vehicle when driver is selected
     if (field === 'driver_id' && value) {
       const selectedDriverId = Number(value);
@@ -1319,19 +1320,21 @@ const JobForm: React.FC<JobFormProps> = (props) => {
 
   // Handle additional pickup locations change
   const handleAdditionalPickupLocationsChange = (locations: Location[]) => {
+    console.log('[PICKUP HANDLER] Called with locations:', locations);
     setUiAdditionalPickupLocations(locations);
     const updates: any = {};
 
     // Clear all pickup fields first
     for (let i = 1; i <= 5; i++) {
       updates[`pickup_loc${i}`] = '';
-      updates[`pickup_loc${i}_price`] = 0;
+      // Only reset price if it wasn't user-modified
+      const priceKey = `pickup_loc${i}_price`;
+      if (!userModifiedLocationPrices.has(priceKey)) {
+        updates[priceKey] = 0;
+      }
     }
 
     // Calculate additional stops surcharge if ancillary service is configured
-    // NOTE: This surcharge should ideally be stored separately from per-location pricing
-    // to avoid overwriting user-entered custom prices for specific locations.
-    // For now, we only apply it if the location doesn't already have a price.
     const additionalStopsSurcharge = calculateAdditionalStopsSurcharge(
       locations.length,
       customerAdditionalStopsPricing,
@@ -1346,9 +1349,16 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       if (index < 5) {
         updates[`pickup_loc${index + 1}`] = loc.location;
         // IMPORTANT: Preserve user-entered prices only
-        // If location already has a price set by user, keep it; otherwise use 0
-        // The ancillary surcharge will be applied by the useEffect if price is 0
-        updates[`pickup_loc${index + 1}_price`] = loc.price || 0;
+        // If location has a price from DynamicLocationList, use it; otherwise use calculated surcharge
+        const priceKey = `pickup_loc${index + 1}_price`;
+        if (loc.price !== undefined && loc.price > 0) {
+          updates[priceKey] = loc.price;
+          // Mark as user-modified
+          setUserModifiedLocationPrices(prev => new Set(prev).add(priceKey));
+        } else if (!userModifiedLocationPrices.has(priceKey)) {
+          // Use calculated surcharge, not 0
+          updates[priceKey] = additionalStopsSurcharge;
+        }
       }
     });
 
@@ -1362,19 +1372,21 @@ const JobForm: React.FC<JobFormProps> = (props) => {
 
   // Handle additional dropoff locations change
   const handleAdditionalDropoffLocationsChange = (locations: Location[]) => {
+    console.log('[DROPOFF HANDLER] Called with locations:', locations);
     setUiAdditionalDropoffLocations(locations);
     const updates: any = {};
 
     // Clear additional dropoff fields first
     for (let i = 1; i <= 5; i++) {
       updates[`dropoff_loc${i}`] = '';
-      updates[`dropoff_loc${i}_price`] = 0;
+      // Only reset price if it wasn't user-modified
+      const priceKey = `dropoff_loc${i}_price`;
+      if (!userModifiedLocationPrices.has(priceKey)) {
+        updates[priceKey] = 0;
+      }
     }
 
     // Calculate additional stops surcharge if ancillary service is configured
-    // NOTE: This surcharge should ideally be stored separately from per-location pricing
-    // to avoid overwriting user-entered custom prices for specific locations.
-    // For now, we only apply it if the location doesn't already have a price.
     const additionalStopsSurcharge = calculateAdditionalStopsSurcharge(
       locations.length,
       customerAdditionalStopsPricing,
@@ -1388,10 +1400,23 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     locations.forEach((loc, index) => {
       if (index < 5) {
         updates[`dropoff_loc${index + 1}`] = loc.location;
-        // IMPORTANT: Preserve user-entered prices only
-        // If location already has a price set by user, keep it; otherwise use 0
-        // The ancillary surcharge will be applied by the useEffect if price is 0
-        updates[`dropoff_loc${index + 1}_price`] = loc.price || 0;
+        // Always apply the calculated surcharge for dropoff locations
+        // unless the user has manually modified it
+        const priceKey = `dropoff_loc${index + 1}_price`;
+        if (!userModifiedLocationPrices.has(priceKey)) {
+          // User hasn't manually edited this price field, so apply calculated surcharge
+          updates[priceKey] = additionalStopsSurcharge;
+        }
+        // If user has modified the price, we don't override it
+
+        console.log(`[Dropoff Location ${index + 1}]`, {
+          location: loc.location,
+          locPrice: loc.price,
+          priceKey,
+          isUserModified: userModifiedLocationPrices.has(priceKey),
+          calculatedSurcharge: additionalStopsSurcharge,
+          finalPrice: updates[priceKey]
+        });
       }
     });
 
@@ -1551,19 +1576,24 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   // NOTE: This effect is kept for backwards compatibility but should be refactored
   // to use separate ancillary charge state instead of overwriting location prices
   useEffect(() => {
-    // Count actual non-empty dropoff fields from form data
+    // Count actual non-empty dropoff fields from form data (align with backend logic - only count dropoffs)
     const actualDropoffCount = [1, 2, 3, 4, 5].reduce((count, i) => {
       return count + (formData[`dropoff_loc${i}` as keyof JobFormData] ? 1 : 0);
     }, 0);
+    
+    // Count actual non-empty pickup fields
     const actualPickupCount = [1, 2, 3, 4, 5].reduce((count, i) => {
       return count + (formData[`pickup_loc${i}` as keyof JobFormData] ? 1 : 0);
     }, 0);
+    
+    // Recalculate if we have locations OR if pricing dependencies have changed
+    // This ensures prices update when customer/service/vehicle changes even with no locations
+    const hasLocations = actualDropoffCount > 0 || actualPickupCount > 0;
+    const hasPricingDependencies = formData.vehicle_type_id && formData.customer_id && formData.service_type;
 
-    // Only recalculate if we have locations and the necessary dependencies
-    if ((actualPickupCount > 0 || actualDropoffCount > 0) && formData.vehicle_type_id) {
-
+    if ((hasLocations || hasPricingDependencies)) {
       const additionalStopsSurcharge = calculateAdditionalStopsSurcharge(
-        Math.max(actualPickupCount, actualDropoffCount),
+        Math.max(actualDropoffCount, actualPickupCount), // Count both pickup and dropoff locations
         customerAdditionalStopsPricing,
         additionalStopsPricing,
         formData.vehicle_type_id,
@@ -1571,26 +1601,43 @@ const JobForm: React.FC<JobFormProps> = (props) => {
         additionalStopsService?.is_per_occurrence
       );
 
+      console.log('[Recalculate Location Prices useEffect triggered]', {
+        pickupCount: actualPickupCount,
+        dropoffCount: actualDropoffCount,
+        maxCount: Math.max(actualDropoffCount, actualPickupCount),
+        newSurcharge: additionalStopsSurcharge,
+        customerPricing: customerAdditionalStopsPricing,
+        vehicleTypeId: formData.vehicle_type_id,
+        customerId: formData.customer_id,
+        serviceType: formData.service_type,
+        additionalStopsService: additionalStopsService?.name,
+        additionalStopsPricing: additionalStopsPricing
+      });
+
       const updates: any = {};
 
       // Update pickup location prices
-      // Always update to reflect current pricing (customer/vehicle/service changes)
+      // Only update if not user-modified
       for (let i = 1; i <= 5; i++) {
         const locKey = `pickup_loc${i}` as keyof JobFormData;
         const priceKey = `pickup_loc${i}_price` as keyof JobFormData;
-        // Update if location exists and price differs from calculated value
-        if (formData[locKey] && formData[priceKey] !== additionalStopsSurcharge) {
+        // Update if location exists, price differs from calculated value, and not user-modified
+        if (formData[locKey] && 
+            formData[priceKey] !== additionalStopsSurcharge && 
+            !userModifiedLocationPrices.has(priceKey)) {
           updates[priceKey] = additionalStopsSurcharge;
         }
       }
 
       // Update dropoff location prices
-      // Always update to reflect current pricing (customer/vehicle/service changes)
+      // Only update if not user-modified
       for (let i = 1; i <= 5; i++) {
         const locKey = `dropoff_loc${i}` as keyof JobFormData;
         const priceKey = `dropoff_loc${i}_price` as keyof JobFormData;
-        // Update if location exists and price differs from calculated value
-        if (formData[locKey] && formData[priceKey] !== additionalStopsSurcharge) {
+        // Update if location exists, price differs from calculated value, and not user-modified
+        if (formData[locKey] && 
+            formData[priceKey] !== additionalStopsSurcharge && 
+            !userModifiedLocationPrices.has(priceKey)) {
           updates[priceKey] = additionalStopsSurcharge;
         }
       }
@@ -1610,7 +1657,9 @@ const JobForm: React.FC<JobFormProps> = (props) => {
     formData.pickup_loc4, formData.pickup_loc5,
     customerAdditionalStopsPricing,
     additionalStopsPricing,
-    additionalStopsService
+    additionalStopsService,
+    userModifiedLocationPrices, // Add userModifiedLocationPrices as dependency
+    isPricingReady // Add isPricingReady as dependency to ensure pricing is loaded
   ]);
 
   // Apply contractor pricing to populate job_cost when contractor and service are selected
@@ -2004,10 +2053,17 @@ const JobForm: React.FC<JobFormProps> = (props) => {
       setUiAdditionalPickupLocations(pickupLocations);
       setUiAdditionalDropoffLocations(dropoffLocations);
     }
-  }, [formData.pickup_loc1, formData.pickup_loc2, formData.pickup_loc3, formData.pickup_loc4, formData.pickup_loc5, 
-      formData.pickup_loc1_price, formData.pickup_loc2_price, formData.pickup_loc3_price, formData.pickup_loc4_price, formData.pickup_loc5_price,
-      formData.dropoff_loc1, formData.dropoff_loc2, formData.dropoff_loc3, formData.dropoff_loc4, formData.dropoff_loc5,
-      formData.dropoff_loc1_price, formData.dropoff_loc2_price, formData.dropoff_loc3_price, formData.dropoff_loc4_price, formData.dropoff_loc5_price]);
+  }, [
+    formData.pickup_loc1, formData.pickup_loc2, formData.pickup_loc3, formData.pickup_loc4, formData.pickup_loc5, 
+    formData.pickup_loc1_price, formData.pickup_loc2_price, formData.pickup_loc3_price, formData.pickup_loc4_price, formData.pickup_loc5_price,
+    formData.dropoff_loc1, formData.dropoff_loc2, formData.dropoff_loc3, formData.dropoff_loc4, formData.dropoff_loc5,
+    formData.dropoff_loc1_price, formData.dropoff_loc2_price, formData.dropoff_loc3_price, formData.dropoff_loc4_price, formData.dropoff_loc5_price,
+    // Add dependencies for customer, service, and vehicle type to update UI when these change
+    formData.customer_id, 
+    formData.service_type, 
+    formData.vehicle_type,
+    formData.vehicle_type_id
+  ]);
 
   // Reset userModifiedPricing flag when service_type or vehicle_type changes
   // This allows automatic pricing updates when these fields change
@@ -2482,6 +2538,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                   <DynamicLocationList
                     value={uiAdditionalPickupLocations}
                     onChange={(locations) => {
+                      console.log('[PICKUP COMPONENT] onChange triggered with:', locations);
                       // Only allow changes if fields are not locked
                       if (!fieldsLocked) {
                         handleAdditionalPickupLocationsChange(locations);
@@ -2505,6 +2562,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                   <DynamicLocationList
                     value={uiAdditionalDropoffLocations}
                     onChange={(locations) => {
+                      console.log('[DROPOFF COMPONENT] onChange triggered with:', locations);
                       // Only allow changes if fields are not locked
                       if (!fieldsLocked) {
                         handleAdditionalDropoffLocationsChange(locations);
