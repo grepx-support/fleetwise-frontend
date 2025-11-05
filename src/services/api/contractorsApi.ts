@@ -126,17 +126,6 @@ export async function bulkUpdateContractorPricing(contractorId: number, pricingD
  */
 export async function getContractorPricingByVehicleType(contractorId: number): Promise<ContractorVehicleTypePricing[]> {
   const response = await api.get<ContractorVehicleTypePricing[]>(`/api/contractors/${contractorId}/pricing/vehicle-type`);
-  console.log('Raw API response for contractor pricing:', response); // Debug log
-  console.log('API response data for contractor pricing:', response.data); // Debug log
-  console.log('API response data length:', response.data.length); // Debug log
-  console.log('First few items from API:', response.data.slice(0, 3)); // Debug log
-  console.log('Data types in response:', response.data.slice(0, 3).map(item => ({
-    id: typeof item.id,
-    contractor_id: typeof item.contractor_id,
-    service_id: typeof item.service_id,
-    vehicle_type_id: typeof item.vehicle_type_id,
-    cost: typeof item.cost
-  }))); // Debug log
   return response.data;
 }
 

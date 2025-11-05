@@ -137,7 +137,7 @@ export function ContractorPricingMatrixTableForCreation({
                         type="number"
                         min="0"
                         step="0.01"
-                        value={currentCost !== undefined ? (currentCost === 0 ? '' : currentCost.toString()) : ''}
+                        value={currentCost !== undefined ? (currentCost === 0 ? '0.00' : currentCost.toFixed(2)) : '0.00'}
                         onChange={(e) => handleCostChange(pricing.service_id, pricing.vehicle_type_id, e.target.value)}
                         className="px-3 py-2 rounded bg-gray-800 text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-24"
                         placeholder="0.00"

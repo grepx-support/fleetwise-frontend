@@ -92,17 +92,16 @@ export function ContractorForm({
       // For new contractors, include pricing data in the creation request
       if (mode === 'create') {
         // Validate that all costs are non-negative
-        let hasError = false;
-        for (const pricing of pricingDataForCreation) {
-          if (pricing.cost < 0) {
-            toast.error(`Cost for ${services.find(s => s.id === pricing.service_id)?.name || 'Service'} must be non-negative`);
-            hasError = true;
-          }
+        const errors = pricingDataForCreation
+          .filter(p => p.cost < 0)
+          .map(p => services.find(s => s.id === p.service_id)?.name || 'Service');
+        if (errors.length > 0) {
+          toast.error(`Costs must be non-negative for: ${errors.join(', ')}`);
+          return;
         }
         
-        if (!hasError) {
-          // Create contractor with pricing data
-          const contractorData = {
+        // Create contractor with pricing data
+        const contractorData = {
             name: data.name?.trim() || "",
             contact_person: data.contact_person?.trim() || undefined,
             contact_number: data.contact_number?.trim() || undefined,
@@ -113,7 +112,6 @@ export function ContractorForm({
           
           await onSubmit(contractorData);
           toast.success("Contractor created successfully with pricing!");
-        }
       } else {
         // For existing contractors, update details first
         const result = await onSubmit(data);
@@ -123,7 +121,7 @@ export function ContractorForm({
         if (services.length > 0 && contractorId) {
           // For edit mode, we're using the ContractorPricingMatrixTable component
           // which handles its own state management, so we don't need to update pricing here
-          toast.success("Contractor details updated successfully!");
+          toast.success("Contractor details updated. Remember to save pricing changes separately.");
         }
       }
     } catch (err) {

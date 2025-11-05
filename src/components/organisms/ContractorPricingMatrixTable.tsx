@@ -104,7 +104,7 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
   };
   
   // Get cost for a specific service and vehicle type
-  const getCostForCell = (serviceId: number, vehicleTypeId: number) => {
+  const getCostForCell = (serviceId: number, vehicleTypeId: number): number | string => {
     const key = `${serviceId}-${vehicleTypeId}`;
     const cost = editedCosts[key];
     
@@ -145,25 +145,16 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
           const key = `${pricing.service_id}-${pricing.vehicle_type_id}`;
           const currentCostValue = editedCosts[key];
           
-          // If the user hasn't edited this field, use the original cost
-          let currentCostNumber = 0;
-          if (currentCostValue !== undefined) {
-            // User has edited this field
-            if (typeof currentCostValue === 'number') {
-              currentCostNumber = currentCostValue;
-            } else if (typeof currentCostValue === 'string') {
-              currentCostNumber = parseFloat(currentCostValue) || 0;
-            }
-          } else {
-            // User hasn't edited this field, use the original cost
-            currentCostNumber = pricing.cost;
-          }
+          const currentCostNumber = currentCostValue !== undefined
+            ? (typeof currentCostValue === 'number' ? currentCostValue : parseFloat(currentCostValue) || 0)
+            : pricing.cost;
           
           // Debug log
           console.log(`Comparing ${key}: currentCostNumber=${currentCostNumber}, pricing.cost=${pricing.cost}`);
           
-          // Only include in changes if the user has edited this field and the cost has been modified
-          if (currentCostValue !== undefined && currentCostNumber !== pricing.cost) {
+          // Only save if user edited AND value changed (with epsilon for float comparison)
+          const hasChanged = Math.abs(currentCostNumber - pricing.cost) > 0.001;
+          if (currentCostValue !== undefined && hasChanged) {
             changes.push({
               serviceId: pricing.service_id,
               vehicleTypeId: pricing.vehicle_type_id,
@@ -196,7 +187,7 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
       }
       
       // Refresh the data to reflect the changes
-      await refetch();
+      const { data: newData } = await refetch();
       
       // Reset the initialization state so edited costs will be reinitialized with new data
       setIsInitialized(false);
@@ -271,15 +262,13 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
                 </td>
                 {row.pricing.map((pricing, pricingIndex) => {
                   const cost = getCostForCell(row.service_id, pricing.vehicle_type_id);
-                  console.log(`Rendering cell ${rowIndex}-${pricingIndex}: service=${row.service_id}, vehicle=${pricing.vehicle_type_id}, cost=${cost}`); // Debug log
-                  console.log(`Key used: ${row.service_id}-${pricing.vehicle_type_id}, editedCosts entry:`, editedCosts[`${row.service_id}-${pricing.vehicle_type_id}`]); // Debug log
                   return (
                     <td key={`${row.service_id}-${pricing.vehicle_type_id}`} className="px-4 py-3 whitespace-nowrap text-sm text-white">
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        value={cost === 0 || cost === '0' ? '0' : (typeof cost === 'number' ? cost.toString() : cost)}
+                        value={cost === 0 || cost === '0' ? '0.00' : (typeof cost === 'number' ? cost.toFixed(2) : cost)}
                         onChange={(e) => handleCostChange(row.service_id, pricing.vehicle_type_id, e.target.value)}
                         className="px-3 py-2 rounded bg-gray-800 text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-20 text-center"
                         disabled={isSaving}
