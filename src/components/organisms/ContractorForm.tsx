@@ -251,8 +251,10 @@ export function ContractorForm({
                 vehicleTypes={vehicleTypes} 
                 onPricingChange={setPricingDataForCreation}
               />
+            ) : initialData?.id ? (
+              <ContractorPricingMatrixTable contractorId={initialData.id} />
             ) : (
-              initialData?.id && <ContractorPricingMatrixTable contractorId={initialData.id} />
+              <div className="text-gray-400">Loading contractor pricing...</div>
             )}
           </div>
         </FormSection>
