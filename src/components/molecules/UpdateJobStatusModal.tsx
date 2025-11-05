@@ -186,19 +186,18 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
     if (lastStatusChangeTime) {
       for (const transition of selectedTransitions) {
         const transitionDate = new Date(transition.datetime);
-        
-        // Must be strictly after the last status change time
-        if (transitionDate <= lastStatusChangeTime) {
+        // Allow same-second updates but prevent backdating
+        // Use 1000ms threshold to handle rapid updates
+        const timeDiff = transitionDate.getTime() - lastStatusChangeTime.getTime();
+        if (timeDiff < -1000) { // More than 1 second before last change
           toast.error(
-            `${statusLabels[transition.to]} timestamp must be AFTER the last status change.\n\n` +
+            `${statusLabels[transition.to]} timestamp cannot be before the last status change.\n\n` +
             `Last change: ${formatTo12Hour(lastStatusChangeTime.toISOString())}\n` +
             `Your selection: ${formatTo12Hour(transition.datetime)}\n\n` +
-            `Please select a time after the last change.`
+            `Please select a time at or after the last change.`
           );
           return;
         }
-        
-
       }
     }
 
@@ -319,7 +318,7 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
                   <div>
                     <p className="font-semibold mb-1">Important:</p>
                     <p>Last status change was at <strong>{formatTo12Hour(lastStatusChangeTime.toISOString())}</strong></p>
-                    <p className="mt-1">New status timestamp must be set to a time <strong>AFTER</strong> this.</p>
+                    <p className="mt-1">New status timestamp must be set to a time <strong>at or after</strong> this.</p>
                   </div>
                 </div>
               </div>
