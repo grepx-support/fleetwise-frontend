@@ -56,6 +56,45 @@ const getNextValidStatuses = (currentStatus: JobStatus): JobStatus[] => {
 };
 
 const getStatusChain = (currentStatus: JobStatus): { from: JobStatus; to: JobStatus }[] => {
+  // For confirmed status, create a chain of transitions
+  if (currentStatus === 'confirmed') {
+    return [
+      { from: 'confirmed', to: 'otw' },
+      { from: 'otw', to: 'ots' },
+      { from: 'ots', to: 'pob' },
+      { from: 'pob', to: 'jc' },
+      { from: 'pob', to: 'sd' }
+    ];
+  }
+  
+  // For otw status, create a chain of transitions
+  if (currentStatus === 'otw') {
+    return [
+      { from: 'otw', to: 'ots' },
+      { from: 'ots', to: 'pob' },
+      { from: 'pob', to: 'jc' },
+      { from: 'pob', to: 'sd' }
+    ];
+  }
+  
+  // For ots status, create a chain of transitions
+  if (currentStatus === 'ots') {
+    return [
+      { from: 'ots', to: 'pob' },
+      { from: 'pob', to: 'jc' },
+      { from: 'pob', to: 'sd' }
+    ];
+  }
+  
+  // For pob status, create a chain of transitions
+  if (currentStatus === 'pob') {
+    return [
+      { from: 'pob', to: 'jc' },
+      { from: 'pob', to: 'sd' }
+    ];
+  }
+  
+  // For other statuses, use the original logic
   const nextStatuses = getNextValidStatuses(currentStatus);
   
   const transitions = nextStatuses.map(to => ({
@@ -128,15 +167,67 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
     setTransitions(prev => {
       const newTransitions = [...prev];
       newTransitions[index] = { ...newTransitions[index], [field]: value };
+      
+      // If we're changing the 'selected' field and it's a 'pob' transition
+      if (field === 'selected' && prev[index].from === 'pob') {
+        // If we're selecting this transition, deselect the other 'pob' transition
+        if (value) {
+          const otherPobIndex = prev.findIndex((t, i) => 
+            i !== index && t.from === 'pob' && t.selected
+          );
+          if (otherPobIndex !== -1) {
+            newTransitions[otherPobIndex] = { 
+              ...newTransitions[otherPobIndex], 
+              selected: false 
+            };
+          }
+        }
+      }
+      
       return newTransitions;
     });
   };
 
   const handleSelectAll = (selected: boolean) => {
-    setTransitions(prev => prev.map(transition => ({
-      ...transition,
-      selected
-    })));
+    // For chain-based statuses, implement smart selection
+    const chainBasedStatuses: JobStatus[] = ['confirmed', 'otw', 'ots', 'pob'];
+    
+    if (chainBasedStatuses.includes(job.status) && selected) {
+      // When selecting all for chain-based statuses, select the first branch by default
+      // (pob → jc, not pob → sd)
+      setTransitions(prev => {
+        // Find if there are multiple transitions from the same 'from' status
+        const fromStatusCounts: Record<JobStatus, number> = {} as Record<JobStatus, number>;
+        prev.forEach(transition => {
+          fromStatusCounts[transition.from] = (fromStatusCounts[transition.from] || 0) + 1;
+        });
+        
+        // Select all transitions, but for branching points, only select the first one
+        return prev.map((transition, index) => {
+          // If this is a branching point (multiple transitions from same 'from' status)
+          if (fromStatusCounts[transition.from] > 1 && transition.from === 'pob') {
+            // Select only the first 'pob' transition (which should be 'pob → jc')
+            const firstPobIndex = prev.findIndex(t => t.from === 'pob');
+            return {
+              ...transition,
+              selected: index === firstPobIndex
+            };
+          }
+          
+          // For non-branching transitions, select all
+          return {
+            ...transition,
+            selected: true
+          };
+        });
+      });
+    } else {
+      // For other cases, use the original logic
+      setTransitions(prev => prev.map(transition => ({
+        ...transition,
+        selected
+      })));
+    }
   };
 
   // Get the last status change timestamp
@@ -166,6 +257,63 @@ export const UpdateJobStatusModal: React.FC<UpdateJobStatusModalProps> = ({
     if (selectedTransitions.length === 0) {
       toast.error('Please select at least one status transition');
       return;
+    }
+
+    // Validate that we don't have both branches selected at the same time
+    const pobTransitions = selectedTransitions.filter(t => t.from === 'pob');
+    if (pobTransitions.length > 1) {
+      toast.error('Cannot select both POB → JC and POB → SD transitions simultaneously. Please select only one branch.');
+      return;
+    }
+
+    // Validate that selected transitions form a consecutive chain
+    if (selectedTransitions.length > 1) {
+      // Create a map of valid transitions for chain validation
+      const validTransitions: Record<string, string> = {};
+      transitions.forEach(t => {
+        validTransitions[`${t.from}-${t.to}`] = t.to;
+      });
+      
+      // Check if the selected transitions form a valid chain
+      let validChain = true;
+      let currentFrom = selectedTransitions[0].from;
+      
+      for (let i = 0; i < selectedTransitions.length; i++) {
+        const transition = selectedTransitions[i];
+        
+        // Check if this transition is valid
+        if (!validTransitions[`${transition.from}-${transition.to}`]) {
+          validChain = false;
+          break;
+        }
+        
+        // For the first transition, just set the currentFrom
+        if (i === 0) {
+          // Check if this is the first in the chain
+          if (transition.from !== job.status) {
+            // For confirmed status, the first transition should be from confirmed
+            if (job.status !== 'confirmed' || transition.from !== 'confirmed') {
+              validChain = false;
+              break;
+            }
+          }
+          currentFrom = transition.to;
+          continue;
+        }
+        
+        // Check if this transition follows the previous one
+        if (transition.from !== currentFrom) {
+          validChain = false;
+          break;
+        }
+        
+        currentFrom = transition.to;
+      }
+      
+      if (!validChain) {
+        toast.error('Selected transitions must form a valid consecutive chain. Please select only consecutive status transitions.');
+        return;
+      }
     }
 
     // Validate that all selected transitions have valid dates
