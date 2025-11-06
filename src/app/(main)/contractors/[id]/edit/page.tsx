@@ -24,9 +24,11 @@ export default function EditContractorDetailsPage() {
         id: parseInt(id as string), 
         ...data 
       });
-      toast.success("Contractor details updated successfully!");
+      toast.success("Contractor updated successfully!");
+      // Redirect to the contractors list page
+      router.push("/contractors");
     } catch (err: any) {
-      setError(err?.message || "Failed to update contractor details");
+      setError(err?.message || "Failed to update contractor");
       throw err;
     }
   };
