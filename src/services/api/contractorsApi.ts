@@ -21,6 +21,16 @@ export interface ContractorPricing {
   cost: number;
 }
 
+export interface ContractorVehicleTypePricing {
+  id: number;
+  contractor_id: number;
+  service_id: number;
+  vehicle_type_id: number;
+  service_name: string;
+  vehicle_type_name: string;
+  cost: number;
+}
+
 export interface UpdateContractorPricingData {
   service_id: number;
   cost: number;
@@ -45,7 +55,16 @@ export async function getContractor(id: number): Promise<Contractor> {
 /**
  * Create a new contractor with optional pricing data
  */
-export async function createContractorWithPricing(data: Omit<Contractor, 'id'> & { pricing_data?: { service_id: number; cost: number }[] }): Promise<Contractor> {
+export async function createContractorWithPricing(data: Omit<Contractor, 'id'> & { 
+  pricing_data?: { 
+    service_id: number; 
+    cost: number 
+  }[] | {
+    service_id: number;
+    vehicle_type_id: number;
+    cost: number;
+  }[] 
+}): Promise<Contractor> {
   const response = await api.post<Contractor>('/api/contractors', data);
   return response.data;
 }
@@ -98,6 +117,26 @@ export async function updateContractorPricing(contractorId: number, serviceId: n
 export async function bulkUpdateContractorPricing(contractorId: number, pricingData: { service_id: number; cost: number }[]): Promise<ContractorPricing[]> {
   const response = await api.post<ContractorPricing[]>(`/api/contractors/${contractorId}/pricing`, {
     pricing_data: pricingData
+  });
+  return response.data;
+}
+
+/**
+ * Fetch contractor pricing by vehicle type
+ */
+export async function getContractorPricingByVehicleType(contractorId: number): Promise<ContractorVehicleTypePricing[]> {
+  const response = await api.get<ContractorVehicleTypePricing[]>(`/api/contractors/${contractorId}/pricing/vehicle-type`);
+  return response.data;
+}
+
+/**
+ * Update contractor pricing for a specific service and vehicle type
+ */
+export async function updateContractorPricingByVehicleType(contractorId: number, serviceId: number, vehicleTypeId: number, cost: number): Promise<ContractorVehicleTypePricing> {
+  const response = await api.post<ContractorVehicleTypePricing>(`/api/contractors/${contractorId}/pricing/vehicle-type`, {
+    service_id: serviceId,
+    vehicle_type_id: vehicleTypeId,
+    cost: cost
   });
   return response.data;
 }
