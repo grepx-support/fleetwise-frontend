@@ -165,7 +165,21 @@ const parseTimeToMinutes = (timeStr: string): number | null => {
 };
 
 // Helper function to determine if a specific field should be locked based on job status
-const shouldLockField = (status: JobStatus, field: string): boolean => {
+const shouldLockField = (
+  status: JobStatus,
+  field: string,
+  role: string
+): boolean => {
+  // 🔒 Customer restrictions
+  if (role === "customer" && ["confirmed", "otw", "ots", "pob"].includes(status)) {
+    const notaccessed = [
+      "remarks"
+    ]
+    // Only 'remarks' field can be edited by customer in these statuses
+    return !notaccessed.includes(field);
+  }
+
+  // 🧩 For driver/admin roles etc.
   // In these statuses, only allow editing of specific fields
   if (["otw", "ots", "pob"].includes(status)) {
     const editableFields = [
@@ -177,10 +191,12 @@ const shouldLockField = (status: JobStatus, field: string): boolean => {
     ];
     return !editableFields.includes(field);
   }
-  // In these statuses, lock all fields
+
+  // 🚫 In these statuses, lock all fields
   const lockedStatuses: JobStatus[] = ["jc", "sd", "canceled"];
   return lockedStatuses.includes(status);
 };
+
 
 // Helper function to calculate midnight surcharge based on pickup time
 const calculateMidnightSurcharge = (
@@ -426,7 +442,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   const role = getUserRole(user);
 
   // only fetch drivers for allowed roles
-  const isRoleAllowed = ["admin", "manager", "accountant"].includes(role);
+  const isRoleAllowed = ["admin", "manager", "accountant", "customer"].includes(role);
 
   const { data: allDriversRaw = [] } = useGetAllDrivers();
   const allDrivers = isRoleAllowed ? allDriversRaw : [];
@@ -569,9 +585,9 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   
   // Determine if fields should be locked based on job status
   // Helper to check if a field should be locked
-  const isFieldLocked = (field: string) => job ? shouldLockField(job.status, field) : false;
+  const isFieldLocked = (field: string) => job ? shouldLockField(job.status, field, role) : false;
   // For legacy code, fieldsLocked is true if any lockable status
-  const fieldsLocked = job && ["jc", "sd", "canceled", "otw", "ots", "pob"].includes(job.status);
+  const fieldsLocked = job && ["jc", "sd", "canceled", "otw", "ots", "pob", "confirmed"].includes(job.status);
 
   // Initialize form data with job data if editing
   useEffect(() => {
@@ -2932,9 +2948,11 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                 <ExtraServicesList
                   value={formData.extra_services}
                   onChange={(svcs) => {
+                    if(!isFieldLocked("extra_services")){
                     // Extra services should remain editable even when fields are locked
-                    handleInputChange("extra_services", svcs.slice(0, 1));
+                    handleInputChange("extra_services", svcs.slice(0, 1));}
                   }}
+                  disabled={isFieldLocked("extra_services")}
                 />
               </div>
               
@@ -3053,12 +3071,14 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                       type="number"
                       value={formData.midnight_surcharge || ''}
                       onChange={(e) => {
+                        if(!isFieldLocked("midnight_surcharge")){
                         handleInputChange('midnight_surcharge', e.target.value);
-                      }}
+                      }}}
                       step="0.01"
                       min={0}
                       placeholder="0.00"
                       className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                      disabled={isFieldLocked("midnight_surchage")}
                     />
                     {errors.midnight_surcharge && <p className="text-sm text-red-400">{errors.midnight_surcharge}</p>}
                     {customerServicePricing && (
@@ -3285,8 +3305,8 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                         <p className="text-xs text-blue-300">
                           Auto-calculated from contractor pricing
                         </p>
-                      </div>
-                    )}
+                      </div>)}
+               
                   </div>
                   
                   {/* Cash to Collect from Passenger */}
@@ -3298,12 +3318,14 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                       type="number"
                       value={formData.cash_to_collect || ''}
                       onChange={(e) => {
+                        if(!isFieldLocked("cash_to_collect")){
                         handleInputChange('cash_to_collect', e.target.value);
-                      }}
+                      }}}
                       step="0.01"
                       min={0}
                       placeholder="0.00"
                       className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                      disabled={isFieldLocked("cash_to_collect")}
                     />
                     <p className="text-xs text-gray-400">
                       Amount driver/contractor should collect from passenger
