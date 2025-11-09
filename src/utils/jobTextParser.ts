@@ -30,6 +30,7 @@ export function parseJobText(text: string): ParseResult {
     const fieldMappings: Record<string, keyof JobFormData> = {
       'customer account': 'customer_name',
       'booking reference': 'booking_ref',
+      'customer reference': 'booking_ref',
       'sixt booking reference': 'booking_ref',
       'type of vehicle': 'vehicle_type',
       'pick up location': 'pickup_location',
