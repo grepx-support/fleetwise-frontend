@@ -81,9 +81,19 @@ export function generateJobSummary(job: Job | ApiJob): string {
     lines.push(`Pick up Location: ${job.pickup_location}`);
   }
 
+  // Pick up Address Note
+  if ((job as any).pickup_note) {
+    lines.push(`PU Address Note: ${(job as any).pickup_note}`);
+  }
+
   // Drop Off Location
   if (job.dropoff_location) {
     lines.push(`Drop Off Location: ${job.dropoff_location}`);
+  }
+
+  // Drop Off Address Note
+  if ((job as any).dropoff_note) {
+    lines.push(`DO Address Note: ${(job as any).dropoff_note}`);
   }
 
   // Passenger Details
@@ -93,6 +103,9 @@ export function generateJobSummary(job: Job | ApiJob): string {
   }
   if (job.passenger_mobile) {
     passengerDetails.push(job.passenger_mobile);
+  }
+  if ((job as any).passenger_email) {
+    passengerDetails.push((job as any).passenger_email);
   }
 
   if (passengerDetails.length > 0) {

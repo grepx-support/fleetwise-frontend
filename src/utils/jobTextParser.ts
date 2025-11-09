@@ -58,10 +58,11 @@ export function parseJobText(text: string): ParseResult {
           if (dateTime.date) parsedData.pickup_date = dateTime.date;
           if (dateTime.time) parsedData.pickup_time = dateTime.time;
         } else if (key.includes('passenger details')) {
-          // Parse passenger name and mobile
+          // Parse passenger name, mobile, and email
           const passengerInfo = parsePassengerInfo(value);
           if (passengerInfo.name) parsedData.passenger_name = passengerInfo.name;
           if (passengerInfo.mobile) parsedData.passenger_mobile = passengerInfo.mobile;
+          if (passengerInfo.email) parsedData.passenger_email = passengerInfo.email;
         } else if (key.includes('flight details')) {
           // Store flight details to prepend to remarks
           flightDetails = value;
@@ -72,16 +73,19 @@ export function parseJobText(text: string): ParseResult {
           // Store contractor name for later mapping
           (parsedData as any).contractor_name = value;
         } else if (key.includes('number of passengers')) {
-          // Parse number of passengers
+          // Parse number of passengers and add to remarks
           const num = parseInt(value, 10);
           if (!isNaN(num)) {
-            // Could be used for validation, stored for reference
+            remarks.push(`Number of Passengers: ${num}`);
           }
         } else if (key.includes('toddler seat') || key.includes('infant seat')) {
           // Parse seat requirements into remarks
           remarks.push(`${keyPart}: ${value}`);
-        } else if (key.includes('do address note') || key.includes('address note')) {
-          // Additional location notes
+        } else if (key.includes('pu address note') || key.includes('pickup address note') || key.includes('pick up address note')) {
+          // Pickup address notes
+          (parsedData as any).pickup_note = value;
+        } else if (key.includes('do address note') || key.includes('dropoff address note') || key.includes('drop off address note') || (key.includes('address note') && !key.includes('pu') && !key.includes('pickup') && !key.includes('pick up'))) {
+          // Dropoff address notes (default for generic "address note")
           (parsedData as any).dropoff_note = value;
         } else if (key.includes('special remarks')) {
           // Special remarks
@@ -236,12 +240,25 @@ function parseDateTime(dateTimeStr: string): { date?: string; time?: string } {
 }
 
 /**
- * Parse passenger information (name and mobile)
+ * Parse passenger information (name, mobile, and email)
  * @param passengerStr - The passenger info string to parse
- * @returns Object with name and mobile fields
+ * @returns Object with name, mobile, and email fields
  */
-function parsePassengerInfo(passengerStr: string): { name?: string; mobile?: string } {
+function parsePassengerInfo(passengerStr: string): { name?: string; mobile?: string; email?: string } {
   if (!passengerStr) return {};
+
+  let name: string | undefined;
+  let mobile: string | undefined;
+  let email: string | undefined;
+
+  // Extract email if present
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  const emailMatch = passengerStr.match(emailRegex);
+  if (emailMatch) {
+    email = emailMatch[0];
+    // Remove email from the string for further processing
+    passengerStr = passengerStr.replace(emailRegex, '').trim();
+  }
 
   // Try to extract name and mobile
   // Handle format: "Mr **** Georges: +65 6213 ****"
@@ -250,26 +267,27 @@ function parsePassengerInfo(passengerStr: string): { name?: string; mobile?: str
     // Extract name (before colon) and mobile (after colon)
     const namePart = colonSplit[0].trim();
     const mobilePart = colonSplit.slice(1).join(':').trim();
-    
+
     // Clean up name (remove asterisks)
-    const name = namePart.replace(/\*/g, '').trim();
-    
+    name = namePart.replace(/\*/g, '').trim();
+
     // Extract mobile (remove non-digits except +)
-    const mobile = mobilePart.replace(/[^\d+]/g, '');
-    
-    return { name, mobile };
+    mobile = mobilePart.replace(/[^\d+]/g, '');
+
+    return { name, mobile, email };
   }
 
   // Try alternative format: "Name (Mobile)" or "Name Mobile"
   const phoneRegex = /[\d\s\-\+\(\)]{8,}/;
   const phoneMatch = passengerStr.match(phoneRegex);
-  
+
   if (phoneMatch) {
-    const mobile = phoneMatch[0].replace(/\D/g, ''); // Remove all non-digit characters
-    const name = passengerStr.replace(phoneRegex, '').trim().replace(/[(),]/g, '').trim();
-    return { name, mobile };
+    mobile = phoneMatch[0].replace(/\D/g, ''); // Remove all non-digit characters
+    name = passengerStr.replace(phoneRegex, '').trim().replace(/[(),]/g, '').trim();
+    return { name, mobile, email };
   }
 
   // If no phone found, treat entire string as name
-  return { name: passengerStr };
+  name = passengerStr.trim();
+  return { name, mobile, email };
 }
