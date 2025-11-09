@@ -166,17 +166,18 @@ const parseTimeToMinutes = (timeStr: string): number | null => {
 
 // Helper function to determine if a specific field should be locked based on job status
 const shouldLockField = (
-  status: JobStatus,
+  status: JobStatus | undefined | null,
   field: string,
   role: string
 ): boolean => {
+  if(!status){
+    return false;
+  }
   // 🔒 Customer restrictions
   if (role === "customer" && ["confirmed", "otw", "ots", "pob"].includes(status)) {
-    const notaccessed = [
-      "remarks"
-    ]
-    // Only 'remarks' field can be edited by customer in these statuses
-    return !notaccessed.includes(field);
+    const editableFields = ["remarks"];
+    // Customers can only edit remarks in confirmed/otw/ots/pob
+    return !editableFields.includes(field);
   }
 
   // 🧩 For driver/admin roles etc.
@@ -2948,10 +2949,11 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                 <ExtraServicesList
                   value={formData.extra_services}
                   onChange={(svcs) => {
-                    if(!isFieldLocked("extra_services")){
+                    // if(!isFieldLocked("extra_services")){
                     // Extra services should remain editable even when fields are locked
                     handleInputChange("extra_services", svcs.slice(0, 1));}
-                  }}
+                  // }
+                }
                   disabled={isFieldLocked("extra_services")}
                 />
               </div>
@@ -3078,7 +3080,7 @@ const JobForm: React.FC<JobFormProps> = (props) => {
                       min={0}
                       placeholder="0.00"
                       className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                      disabled={isFieldLocked("midnight_surchage")}
+                      disabled={isFieldLocked("midnight_surcharge")}
                     />
                     {errors.midnight_surcharge && <p className="text-sm text-red-400">{errors.midnight_surcharge}</p>}
                     {customerServicePricing && (
