@@ -61,6 +61,13 @@ export function generateJobSummary(job: Job | ApiJob): string {
     lines.push(`Type of vehicle: ${vehicleType}`);
   }
 
+  // Vehicle (assigned vehicle - if different from vehicle_type)
+  if ((job as any).vehicle && typeof (job as any).vehicle === 'object' && (job as any).vehicle.name) {
+    lines.push(`Vehicle: ${(job as any).vehicle.name}`);
+  } else if ((job as any).vehicle && typeof (job as any).vehicle === 'string') {
+    lines.push(`Vehicle: ${(job as any).vehicle}`);
+  }
+
   // Pick up Date and Time
   if (job.pickup_date && job.pickup_time) {
     const formattedDateTime = formatDateTime(job.pickup_date, job.pickup_time);
@@ -92,10 +99,29 @@ export function generateJobSummary(job: Job | ApiJob): string {
     lines.push(`Passenger Details: ${passengerDetails.join(', ')}`);
   }
 
+  // Driver Name (assigned driver)
+  if ((job as any).driver?.name) {
+    lines.push(`Driver: ${(job as any).driver.name}`);
+  }
+
   // Driver Notes (from customer_remark or remarks)
   const driverNotes = getDriverNotes(job);
   if (driverNotes) {
     lines.push(`Driver Notes: ${driverNotes}`);
+  }
+
+  // Extra Services
+  if ((job as any).extra_services && Array.isArray((job as any).extra_services) && (job as any).extra_services.length > 0) {
+    const serviceNames = (job as any).extra_services
+      .map((service: any) => {
+        if (typeof service === 'string') return service;
+        // Check for both 'name' and 'description' properties
+        return service.name || service.description;
+      })
+      .filter(Boolean);
+    if (serviceNames.length > 0) {
+      lines.push(`Extra Services: ${serviceNames.join(', ')}`);
+    }
   }
 
   return lines.join('\n');

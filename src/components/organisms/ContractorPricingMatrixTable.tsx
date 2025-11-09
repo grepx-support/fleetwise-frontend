@@ -19,9 +19,15 @@ interface PricingMatrixRow {
 
 interface ContractorPricingMatrixTableProps {
   contractorId: number;
+  ref?: React.Ref<ContractorPricingMatrixTableHandle>;
 }
 
-export function ContractorPricingMatrixTable({ contractorId }: ContractorPricingMatrixTableProps) {
+export interface ContractorPricingMatrixTableHandle {
+  saveAllPricing: () => Promise<void>;
+}
+
+export const ContractorPricingMatrixTable = React.forwardRef<ContractorPricingMatrixTableHandle, ContractorPricingMatrixTableProps>(
+  function ContractorPricingMatrixTableComponent({ contractorId }, ref) {
   console.log('ContractorPricingMatrixTable received contractorId:', contractorId); // Debug log
   const { vehicleTypes, services, pricingMatrix, isLoading, refetch } = useContractorPricingMatrix(contractorId);
   console.log('Hook returned data:', { vehicleTypes, services, pricingMatrix, isLoading }); // Debug log
@@ -171,7 +177,6 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
 
       if (changes.length === 0) {
         console.log('No changes to save');
-        toast.success('No changes to save');
         setIsSaving(false);
         return;
       }
@@ -200,10 +205,16 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
     } catch (error: any) {
       console.error('Error saving pricing:', error);
       toast.error(error?.message || 'Failed to update pricing');
+      throw error;
     } finally {
       setIsSaving(false);
     }
   };
+
+  // Expose saveAllPricing via ref
+  React.useImperativeHandle(ref, () => ({
+    saveAllPricing: handleSaveAll
+  }));
 
   if (isLoading) {
     return <div>Loading pricing data...</div>;
@@ -227,16 +238,6 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
   
   return (
     <div className="space-y-4 w-full">
-      <div className="flex justify-end">
-        <Button
-          onClick={handleSaveAll}
-          disabled={isSaving || updatePricingMutation.isPending}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg"
-        >
-          {isSaving || updatePricingMutation.isPending ? 'Saving...' : 'Save All'}
-        </Button>
-      </div>
-
       <div className="overflow-x-auto w-full">
         <table className="min-w-full divide-y divide-gray-700">
           <thead className="bg-gray-800">
@@ -289,4 +290,5 @@ export function ContractorPricingMatrixTable({ contractorId }: ContractorPricing
       )}
     </div>
   );
-}
+  }
+);

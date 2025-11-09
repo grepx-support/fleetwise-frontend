@@ -24,6 +24,7 @@ export function parseJobText(text: string): ParseResult {
     const parsedData: Partial<JobFormData> = {};
     const remarks: string[] = [];
     let flightDetails = '';
+    const extraServices: Array<{ description: string; price: number }> = [];
 
     // Define field mappings
     const fieldMappings: Record<string, keyof JobFormData> = {
@@ -85,6 +86,23 @@ export function parseJobText(text: string): ParseResult {
         } else if (key.includes('special remarks')) {
           // Special remarks
           remarks.push(`Special Remarks: ${value}`);
+        } else if (key.includes('driver:') || key === 'driver') {
+          // Store driver name for mapping
+          (parsedData as any).driver_name = value.trim();
+        } else if (key.includes('vehicle:') || key === 'vehicle') {
+          // Store vehicle name for mapping
+          (parsedData as any).vehicle_name = value.trim();
+        } else if (key.includes('extra services')) {
+          // Parse extra services as comma-separated list
+          // Split by comma and create service objects with description and default price 0
+          const serviceList = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+          serviceList.forEach(serviceName => {
+            extraServices.push({
+              description: serviceName,
+              price: 0
+            });
+          });
+          // Don't add to remarks - extra services are stored separately
         } else {
           // Handle standard field mappings
           const fieldKey = Object.keys(fieldMappings).find(k => key.includes(k));
@@ -93,11 +111,9 @@ export function parseJobText(text: string): ParseResult {
             // Log the parsed customer name for debugging
             if (targetField === 'customer_name') {
               console.log('[jobTextParser] Parsing customer name:', { key, value, trimmedValue: value.trim() });
-              // Normalize the customer name to remove extra spaces and special characters
+              // Normalize the customer name to remove extra spaces
               const normalizedCustomerName = value.trim()
-                .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-                .replace(/[^\w\s\-&']/g, '') // Keep alphanumeric, spaces, hyphens, ampersands, and apostrophes
-                .trim();
+                .replace(/\s+/g, ' '); // Replace multiple spaces with single space
               (parsedData[targetField] as string) = normalizedCustomerName;
             } else {
               (parsedData[targetField] as string) = value.trim();
@@ -112,9 +128,14 @@ export function parseJobText(text: string): ParseResult {
       remarks.unshift(`Flight Details: ${flightDetails}`);
     }
 
-    // Combine remarks into customer_remark field (used by backend)
+    // Combine remarks into remarks field (used by JobForm)
     if (remarks.length > 0) {
-      parsedData.customer_remark = remarks.join('\n');
+      (parsedData as any).remarks = remarks.join('\n');
+    }
+
+    // Add extra services to parsed data
+    if (extraServices.length > 0) {
+      (parsedData as any).extra_services = extraServices;
     }
 
     console.log('[jobTextParser] Parsed data:', parsedData);
