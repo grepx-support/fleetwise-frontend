@@ -66,9 +66,15 @@ export function parseJobText(text: string): ParseResult {
         } else if (key.includes('flight details')) {
           // Store flight details to prepend to remarks
           flightDetails = value;
-        } else if (key.includes('driver notes') || key.includes('system booking note') || key.includes('report')) {
-          // Collect remarks
-          if (value) remarks.push(`${keyPart}: ${value}`);
+        } else if (key.includes('report')) {
+          // Capture report time instructions (critical operational data)
+          if (value) remarks.push(`Report: ${value}`);
+        } else if (key.includes('system booking note') || key.includes('booking note')) {
+          // Capture system booking notes (business rules and instructions)
+          if (value) remarks.push(`System Booking Note: ${value}`);
+        } else if (key.includes('driver notes')) {
+          // Collect driver notes
+          if (value) remarks.push(`Driver Notes: ${value}`);
         } else if (key.includes('contractor') || key.includes('assigned to')) {
           // Store contractor name for later mapping
           (parsedData as any).contractor_name = value;
