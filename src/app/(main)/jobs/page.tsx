@@ -130,7 +130,7 @@ filteredActions = filteredActions.map((a) => {
     return {
       ...a,
       disabled: (job: ApiJob) =>
-        role === "customer" && job.status === "confirmed",
+        role === "customer" && ["jc", "sd", "canceled"].includes(job.status),
     };
   }
   return a;
