@@ -40,11 +40,11 @@ export function generateJobSummary(job: Job | ApiJob): string {
     lines.push(`Customer Account: ${job.customer.name}`);
   }
 
-  // SIXT Booking Reference
+  // Customer Reference
   if (hasReference(job)) {
     const bookingRef = getBookingRef(job);
     if (bookingRef) {
-      lines.push(`SIXT Booking Reference: ${bookingRef}`);
+      lines.push(`Customer Reference: ${bookingRef}`);
     }
   }
 
