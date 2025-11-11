@@ -33,10 +33,8 @@ export const jobSchema = z.object({
   service_id: z.preprocess((val) => Number(val), z.number())
     .refine(val => !isNaN(val), { message: 'Service is required' }),
 
-  vehicle_id: z.preprocess((val) => Number(val), z.number())
-    .refine(val => !isNaN(val), { message: 'Vehicle is required' }),
+  vehicle_id: z.preprocess((val) => Number(val), z.number().optional()),
 
-  driver_id: z.preprocess((val) => Number(val), z.number())
-    .refine(val => !isNaN(val), { message: 'Driver is required' }),
+  driver_id: z.preprocess((val) => Number(val), z.number().optional()),
   // Add other fields as needed, with correct types and validation
 }); 

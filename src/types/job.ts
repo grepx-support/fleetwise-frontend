@@ -375,10 +375,10 @@ export const jobSchema = z.object({
   dropoff_loc5_price: z.number().min(0).default(0),
   
   // Vehicle & Driver Information
-  vehicle_id: z.number().min(1, 'Vehicle is required'),
+  vehicle_id: z.number().optional(),
   vehicle_type: z.string().min(1, 'Vehicle type is required'),
   vehicle_number: z.string().optional(),
-  driver_id: z.number().min(1, 'Driver is required'),
+  driver_id: z.number().optional(),
   driver_contact: z.string().optional(),
   
   // Status and Payment
