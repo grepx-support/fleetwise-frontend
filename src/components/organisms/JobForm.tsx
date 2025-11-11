@@ -2617,7 +2617,7 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                     value={formData.service_type || ''}
                     onChange={v => {
                       // Only allow changes if fields are not locked
-                      if (!fieldsLocked) {
+                      if (!isFieldLocked("service_type")) {
                         handleInputChange('service_type', v);
                         // Find the selected service for service_id reference
                         const selectedService = allServices.find(s => s.name === v);
@@ -2641,8 +2641,8 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                         .filter(s => s.is_ancillary === false) // Explicit false check to filter out ancillary services
                         .map(s => ({ value: s.name, label: s.name }))
                     ]}
-                    className={fieldsLocked ? "opacity-75" : ""}
-                    disabled={fieldsLocked}
+                    // className={fieldsLocked ? "opacity-75" : ""}
+                    disabled={isFieldLocked("service_type")}
                   />
                   
                   <SelectField 
