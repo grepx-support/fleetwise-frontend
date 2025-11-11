@@ -259,9 +259,13 @@ export default function SettingsPage() {
       case 'admin':
         return 'Full Access';
       case 'manager':
-        return 'Fleet Wise, View Report';
+        return 'full access to job workflow, people and assets, billing';
+      case 'accountant':
+        return 'full access to billing and claim, people and assets, job';
+      case 'customer':
+        return 'create, view and edit jobs for himself, view audit trail';
       case 'driver':
-        return 'View Assignment, Update Status';
+        return 'view own jobs';
       default:
         return 'View Only';
     }
