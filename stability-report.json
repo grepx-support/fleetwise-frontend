@@ -1,0 +1,21 @@
+{
+  "specs": {
+    "cypress/e2e/jobs-crud.cy.ts": {
+      "runs": 5,
+      "passes": 0,
+      "failures": 5,
+      "flakiness": "100.00%"
+    },
+    "cypress/e2e/drivers-crud.cy.ts": {
+      "runs": 5,
+      "passes": 0,
+      "failures": 5,
+      "flakiness": "100.00%"
+    }
+  },
+  "summary": {
+    "total": 5,
+    "passed": 0,
+    "failed": 10
+  }
+}

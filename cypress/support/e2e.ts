@@ -14,4 +14,10 @@
 // ***********************************************************
 
 // Import commands.js using ES2015 syntax:
-import './commands'
+import './commands';
+import { setupApiInterceptions } from './api-helpers';
+
+// Setup API intercepts before each test
+beforeEach(() => {
+  setupApiInterceptions();
+});

@@ -16,8 +16,11 @@
     "test:e2e:open": "start-server-and-test dev http://localhost:3000 'cypress open'",
     "test:e2e:spec": "start-server-and-test dev http://localhost:3000 'cypress run --spec'",
     "test:e2e:jobs": "start-server-and-test dev http://localhost:3000 'cypress run --spec cypress/e2e/jobs-crud.cy.ts --headless'",
+    "test:e2e:auth": "start-server-and-test dev http://localhost:3000 'cypress run --spec cypress/e2e/auth.cy.ts --headless'",
+    "test:e2e:api": "start-server-and-test dev http://localhost:3000 'cypress run --spec cypress/e2e/api-intercept.cy.ts --headless'",
     "test:e2e:autonomous": "node scripts/run-e2e.js",
     "test:e2e:clean": "npm run test:e2e:jobs && npm run cleanup:e2e",
+    "test:stability-audit": "node scripts/stability-audit.js",
     "cleanup:e2e": "node scripts/cleanup-e2e.js",
     "e2e:drivers": "cross-env CYPRESS_SPEC=cypress/e2e/drivers-crud.cy.ts node scripts/run-e2e.js"
   },

@@ -2,32 +2,33 @@ const { defineConfig } = require('cypress');
 
 module.exports = defineConfig({
   e2e: {
-    baseUrl: process.env.CYPRESS_BASE_URL || process.env.BASE_URL || 'https://test.grepx.sg',
+    baseUrl: 'http://localhost:3000', // Frontend dev server
     specPattern: 'cypress/e2e/**/*.cy.{js,ts,jsx,tsx}',
     supportFile: 'cypress/support/e2e.ts',
     
+    env: {
+      apiUrl: 'http://localhost:5000', // Backend API
+    },
+    
     // Performance optimizations
-    video: false, // Disable video recording for faster tests
+    video: false,
     screenshotOnRunFailure: true,
     
-    // Timeout configurations
-    defaultCommandTimeout: 10000,
-    requestTimeout: 10000,
-    responseTimeout: 10000,
+    // Increased timeouts for local dev (slow DB queries)
+    defaultCommandTimeout: 15000, // Increased from 10s
+    requestTimeout: 15000,
+    responseTimeout: 15000,
     
     // Retry configuration
     retries: {
-      runMode: 1,
-      openMode: 0
+      runMode: 2, // Retry flaky tests in CI
+      openMode: 0, // No retry in interactive mode
     },
     
-    // Viewport configuration
     viewportWidth: 1280,
     viewportHeight: 720,
     
-    // Setup and teardown
     setupNodeEvents(on, config) {
-      // Log test events
       on('task', {
         log(message) {
           console.log(message);
@@ -38,25 +39,8 @@ module.exports = defineConfig({
           return null;
         }
       });
-
-      // Cleanup after tests
-      on('after:run', async (results) => {
-        // Clean up any test artifacts
-        console.log('🧹 Cleaning up after E2E tests...');
-        
-        // You can add custom cleanup logic here
-        // For example, clearing localStorage, cookies, etc.
-        
-        return results;
-      });
+      
+      return config;
     },
   },
-  
-  // Component testing configuration (if needed later)
-  component: {
-    devServer: {
-      framework: 'next',
-      bundler: 'webpack',
-    },
-  },
-}); 
+});
