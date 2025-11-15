@@ -1,5 +1,14 @@
 /// <reference types="cypress" />
-// Add/replace this in cypress/support/commands.ts
+
+// TypeScript declarations
+declare global {
+  namespace Cypress {
+    interface Chainable {
+      login(roleOrEmail: string, password?: string): Chainable<void>;
+      logout(): Chainable<void>;
+    }
+  }
+}
 
 // Predefined test users from seed_data.py
 const testUsers: Record<string, { email: string; password: string }> = {
@@ -72,6 +81,8 @@ Cypress.Commands.add('login', (roleOrEmail: string, password?: string) => {
         // Set test user role in cookie for middleware
         cy.window().then((win) => {
           win.document.cookie = `test_user_role=admin; path=/`;
+          // Also set a session cookie to ensure proper authentication
+          win.document.cookie = `session=authenticated; path=/`;
         });
         
         // Wait for dashboard or expected post-login URL
@@ -108,6 +119,8 @@ Cypress.Commands.add('login', (roleOrEmail: string, password?: string) => {
                   }
                   // Set test user role in cookie for middleware
                   win.document.cookie = `test_user_role=admin; path=/`;
+                  // Also set a session cookie to ensure proper authentication
+                  win.document.cookie = `session=authenticated; path=/`;
                 });
               }
               // visit dashboard to initialize app with the tokens
@@ -148,15 +161,5 @@ Cypress.on('fail', (error, runnable) => {
   }
   throw error;
 });
-
-// TypeScript declarations
-declare global {
-  namespace Cypress {
-    interface Chainable {
-      login(roleOrEmail: string, password?: string): Chainable<void>;
-      logout(): Chainable<void>;
-    }
-  }
-}
 
 export {};

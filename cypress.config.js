@@ -5,7 +5,7 @@ module.exports = defineConfig({
     baseUrl: 'http://localhost:3000', // Frontend dev server
     specPattern: 'cypress/e2e/**/*.cy.{js,ts,jsx,tsx}',
     supportFile: 'cypress/support/e2e.ts',
-    
+      chromeWebSecurity: false,  
     env: {
       apiUrl: 'http://localhost:5000', // Backend API
     },

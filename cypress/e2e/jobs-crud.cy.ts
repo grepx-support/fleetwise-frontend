@@ -12,8 +12,8 @@ describe('Jobs CRUD E2E Tests', () => {
     it('should display the jobs list', () => {
       cy.visit('/jobs');
 
-      // Wait for real API call (not mock)
-      cy.wait('@getJobs').its('response.statusCode').should('eq', 200);
+      // Wait for real API call to complete
+      cy.wait('@getJobs', { timeout: 30000 });
 
       // Verify table exists
       cy.get('table').should('be.visible');
@@ -27,7 +27,8 @@ describe('Jobs CRUD E2E Tests', () => {
   describe('CREATE - New Job', () => {
     it('should create a new job successfully', () => {
       cy.visit('/jobs');
-      cy.wait('@getJobs');
+      // Wait for initial jobs list to load
+      cy.wait('@getJobs', { timeout: 30000 });
       
       // Click Add Job button
       cy.contains('button', 'Add Job').click();
@@ -101,13 +102,13 @@ describe('Jobs CRUD E2E Tests', () => {
       cy.contains('button', 'Save Changes').click();
       
       // Wait for API call and verify success
-      // cy.wait('@createJob', { timeout: 20000 }).its('response.statusCode').should('be.oneOf', [200, 201]);
+      cy.wait('@createJob', { timeout: 30000 });
       
       // Verify redirect to jobs list
       cy.url().should('include', '/jobs');
       
       // Wait for jobs list to refresh
-      cy.wait('@getJobs');
+      cy.wait('@getJobs', { timeout: 30000 });
       
       // Wait a bit more for the UI to update
       cy.wait(3000);

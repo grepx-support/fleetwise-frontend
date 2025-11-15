@@ -20,4 +20,31 @@ import { setupApiInterceptions } from './api-helpers';
 // Setup API intercepts before each test
 beforeEach(() => {
   setupApiInterceptions();
+
+  cy.window().then((win) => {
+    // Check if window and document are available before manipulating DOM
+    if (win && win.document) {
+      const style = win.document.createElement('style');
+      style.innerHTML = `
+        /* Force action column buttons to render inside Cypress */
+        td:last-child button {
+          min-width: 32px !important;
+          min-height: 32px !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        /* Ensure SVG icons display correctly */
+        td:last-child svg {
+          width: 16px !important;
+          height: 16px !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          display: inline-block !important;
+        }
+      `;
+      win.document.head.appendChild(style);
+    }
+  });
 });

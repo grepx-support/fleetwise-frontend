@@ -46,37 +46,50 @@ export function setupApiInterceptions(): void {
     });
   }).as('login');
 
-  // Intercept jobs API calls
-  cy.intercept('GET', '/api/jobs/table*', (req) => {
-    req.reply((res) => {
-      res.send(res.body);
-    });
-  }).as('getJobs');
+  // Jobs endpoints - match actual API endpoints from jobsApi.ts
+  cy.intercept('GET', '/api/jobs/table*').as('getJobs');
+  cy.intercept('GET', '/api/jobs/*').as('getJob'); // Single job by ID
+  cy.intercept('POST', '/api/jobs').as('createJob'); // Create new job
+  cy.intercept('PUT', '/api/jobs/*').as('updateJob'); // Update existing job
+  cy.intercept('DELETE', '/api/jobs/*').as('deleteJob'); // Delete job
   
-  cy.intercept('GET', '/api/jobs/view/*', (req) => {
-    req.reply((res) => {
-      res.send(res.body);
-    });
-  }).as('getJob');
+  // Unbilled jobs endpoint - allow real API call
+  cy.intercept('GET', '/api/jobs/unbilled*', (req) => {
+    req.continue();
+  }).as('getUnbilledJobs');
   
-  cy.intercept('POST', '/api/jobs/add', (req) => {
-    req.reply((res) => {
-      res.send(res.body);
-    });
-  }).as('createJob');
+  // Invoice endpoints
+  cy.intercept('GET', '/api/invoices').as('getInvoices');
+  cy.intercept('GET', '/api/invoices/*').as('getInvoice');
+  cy.intercept('POST', '/api/invoices/generate', (req) => {
+    req.continue();
+  }).as('generateInvoice');
+  cy.intercept('PUT', '/api/invoices/*/statusUpdate/*', (req) => {
+    req.continue();
+  }).as('updateInvoiceStatus');
+  cy.intercept('PUT', '/api/invoices/*', (req) => {
+    req.continue();
+  }).as('updateInvoice');
+  cy.intercept('DELETE', '/api/invoices/remove/*', (req) => {
+    req.continue();
+  }).as('deleteInvoice');
+  cy.intercept('GET', '/api/invoices/download/*', (req) => {
+    req.continue();
+  }).as('downloadInvoice');
+  cy.intercept('GET', '/api/invoices/unpaid/download/*', (req) => {
+    req.continue();
+  }).as('downloadUnpaidInvoice');
   
-  cy.intercept('PUT', '/api/jobs/*', (req) => {
-    req.reply((res) => {
-      res.send(res.body);
-    });
-  }).as('updateJob');
+  // Invoice payment endpoints
+  cy.intercept('GET', '/api/invoices/*/payments').as('getInvoicePayments');
+  cy.intercept('POST', '/api/invoices/*/payments').as('addInvoicePayment');
+  cy.intercept('DELETE', '/api/invoices/*/payments/*').as('deleteInvoicePayment');
   
-  cy.intercept('POST', '/api/jobs/delete/*', (req) => {
-    req.reply((res) => {
-      res.send(res.body);
-    });
-  }).as('deleteJob');
- 
+  // Invoice reports endpoints
+  cy.intercept('GET', '/api/invoices/report').as('getInvoiceReport');
+  cy.intercept('GET', '/api/invoices/unpaid', (req) => {
+    req.continue();
+  }).as('getUnpaidInvoices');
   
   // Intercept drivers API calls - allow all requests to go through to real API
   cy.intercept('GET', '/api/drivers*', (req) => {
