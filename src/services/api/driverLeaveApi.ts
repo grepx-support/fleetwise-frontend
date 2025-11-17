@@ -112,3 +112,50 @@ export async function checkDriverLeaveStatus(driverId: number, date: string): Pr
   }>(`/api/drivers/${driverId}/check-leave?date=${date}`);
   return response.data;
 }
+
+// Preview affected jobs without creating a leave record
+export async function previewAffectedJobs(
+  driverId: number,
+  startDate: string, // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
+): Promise<AffectedJobsResponse> {
+  const response = await api.post<AffectedJobsResponse>(
+    `/api/drivers/${driverId}/preview-affected-jobs`,
+    {
+      start_date: startDate,
+      end_date: endDate
+    }
+  );
+  return response.data;
+}
+
+// Create driver leave with job reassignments in a single atomic transaction
+export async function createLeaveWithReassignments(data: {
+  driver_id: number;
+  leave_type: 'sick_leave' | 'vacation' | 'personal' | 'emergency';
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  reason?: string;
+  job_reassignments?: JobReassignmentRequest[];
+}): Promise<{
+  message: string;
+  leave_id: number;
+  leave: DriverLeave;
+  reassignment_summary?: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}> {
+  const response = await api.post<{
+    message: string;
+    leave_id: number;
+    leave: DriverLeave;
+    reassignment_summary?: {
+      total: number;
+      successful: number;
+      failed: number;
+    };
+  }>('/api/driver-leaves/create-with-reassignments', data);
+  return response.data;
+}

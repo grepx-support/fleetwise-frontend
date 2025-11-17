@@ -45,10 +45,10 @@ export default function LeaveHistoryPage() {
         title="Leave History" 
         extraActions={
           <AnimatedButton
-            onClick={() => router.push('/drivers')}
+            onClick={() => router.push('/drivers/leave/apply')}
             className="bg-gradient-to-r from-blue-500 to-blue-700 hover:opacity-90 text-white rounded-lg px-4 py-2"
           >
-            Back to Drivers
+            Apply Leave
           </AnimatedButton>
         }
         className="mb-6"

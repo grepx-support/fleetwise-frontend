@@ -111,7 +111,6 @@ const navSections: NavSection[] = [
         description: "Apply for driver leave",
         // Removed Apply Leave from children since it's now the main link
         children: [
-          { label: "Leave History", href: "/drivers/leave/history", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, description: "View leave history" },
         ]
       },
     ] 
@@ -219,8 +218,9 @@ const visibleSections = navSections
   }))
   .filter((item) => {
     if (isBlocked(item.href)) return false;
+    // Allow items with children arrays (even if empty) or items without children
     if (Array.isArray(item.children)) {
-      return item.children.length > 0;
+      return true; // Always show items that have a children array, even if empty
     }
     return true;
   }),
@@ -496,8 +496,8 @@ const toggleMenu = (key: string) => {
               </div>
             </Link>
 
-            {/* Chevron for expand */}
-            {!isCollapsed && (
+            {/* Chevron for expand - only show if there are actual children */}
+            {!isCollapsed && item.children && item.children.length > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleMenu(item.label); }}
                 className="px-3 py-3 rounded-r-xl hover:bg-white/10 focus:outline-none"
