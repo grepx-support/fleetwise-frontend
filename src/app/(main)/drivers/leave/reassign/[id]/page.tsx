@@ -98,7 +98,6 @@ export default function ReassignJobsPage({ params }: { params: Promise<{ id: str
         const assignment = jobAssignments[jobId];
         return {
           job_id: jobId,
-          reassignment_type: "driver" as "driver" | "vehicle" | "contractor",
           new_driver_id: assignment?.driverId || undefined,
           new_vehicle_id: assignment?.vehicleId || undefined,
           new_contractor_id: assignment?.contractorId || undefined,

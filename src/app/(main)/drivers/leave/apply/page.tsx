@@ -27,7 +27,6 @@ export default function ApplyLeavePage() {
 
   // Job assignments state
   const [jobAssignments, setJobAssignments] = useState<Record<number, {
-    reassignment_type: 'driver' | 'vehicle' | 'contractor';
     new_driver_id?: number;
     new_vehicle_id?: number;
     new_contractor_id?: number;
@@ -41,6 +40,25 @@ export default function ApplyLeavePage() {
   const { data: vehicles = [] } = useGetAllVehicles();
   const { data: contractors = [] } = useGetAllContractors();
 
+  // Shared date validation function
+  const validateDates = (startDate: string, endDate: string): { valid: boolean; error?: string } => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (end < start) {
+      return { valid: false, error: "End date must be after start date" };
+    }
+    if (start < today) {
+      return { valid: false, error: "Cannot create leave for past dates" };
+    }
+    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff > 90) {
+      return { valid: false, error: "Leave period cannot exceed 90 days" };
+    }
+    return { valid: true };
+  };
+
   // Automatically preview affected jobs when all required fields are filled
   useEffect(() => {
     const loadAffectedJobs = async () => {
@@ -52,25 +70,10 @@ export default function ApplyLeavePage() {
         return;
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      
-      if (end < start) {
-        toast.error("End date must be after start date");
-        return;
-      }
-      
-      if (start < today) {
-        toast.error("Cannot create leave for past dates");
-        return;
-      }
-      
-      // Optional: Prevent unreasonably long leaves (e.g., > 90 days)
-      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysDiff > 90) {
-        toast.error("Leave period cannot exceed 90 days");
+      // Validate dates
+      const validation = validateDates(startDate, endDate);
+      if (!validation.valid) {
+        toast.error(validation.error!);
         return;
       }
 
@@ -90,6 +93,9 @@ export default function ApplyLeavePage() {
         // Check if it's a leave conflict error during preview
         const errorMessage = error.response?.data?.error || "Failed to preview affected jobs";
         toast.error(errorMessage);
+        // Clear all related state to prevent stale data
+        setAffectedJobs([]);
+        setJobAssignments({});
         setJobsPreviewLoaded(false);
       } finally {
         setLoadingJobs(false);
@@ -102,12 +108,7 @@ export default function ApplyLeavePage() {
   // Memoized filtered jobs for display
   const filteredJobs = React.useMemo(() => {
     if (!selectedDriver || !startDate || !endDate) return [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return affectedJobs.filter(job => {
-      const jobDate = new Date(job.pickup_date);
-      return jobDate >= start && jobDate <= end;
-    });
+    return affectedJobs; // Backend already filtered by date range
   }, [affectedJobs, selectedDriver, startDate, endDate]);
 
   // Handle assignment change - allow all three fields to be selected
@@ -117,38 +118,12 @@ export default function ApplyLeavePage() {
     value: number | undefined
   ) => {
     setJobAssignments(prev => {
-      const current = prev[jobId] || { reassignment_type: 'driver' };
-
-      // Update the assignment based on type without clearing other fields
-      if (type === 'driver') {
-        return {
-          ...prev,
-          [jobId]: {
-            ...current,
-            new_driver_id: value
-          }
-        };
-      } else if (type === 'vehicle') {
-        return {
-          ...prev,
-          [jobId]: {
-            ...current,
-            reassignment_type: 'vehicle',
-            new_vehicle_id: value
-          }
-        };
-      } else if (type === 'contractor') {
-        return {
-          ...prev,
-          [jobId]: {
-            ...current,
-            reassignment_type: 'contractor',
-            new_contractor_id: value
-          }
-        };
-      }
-
-      return prev;
+      const current = prev[jobId] || {};
+      const updated = { ...current };
+      if (type === 'driver') updated.new_driver_id = value;
+      else if (type === 'vehicle') updated.new_vehicle_id = value;
+      else if (type === 'contractor') updated.new_contractor_id = value;
+      return { ...prev, [jobId]: updated };
     });
   };
 
@@ -157,28 +132,19 @@ export default function ApplyLeavePage() {
   // - If some but not all fields selected, mark as pending
   // - If all fields selected, mark as confirmed
   const validateAssignments = (): boolean => {
-    if (affectedJobs.length === 0) {
-      return true; // No jobs to assign
-    }
-
-    for (const job of affectedJobs) {
+    if (affectedJobs.length === 0) return true;
+    
+    const unassignedJobs = affectedJobs.filter(job => {
       const assignment = jobAssignments[job.id];
-
-      // If no assignment data for this job, it's not required - skip validation
-      if (!assignment) {
-        continue;
-      }
-
-      // Check if any fields are selected
-      const hasDriver = !!assignment.new_driver_id;
-      const hasVehicle = !!assignment.new_vehicle_id;
-      const hasContractor = !!assignment.new_contractor_id;
-
-      // If some but not all fields are selected, it's valid but will be pending
-      // If all fields are selected, it's confirmed
-      // If no fields are selected, we already skipped above
+      return !assignment || (!assignment.new_driver_id && !assignment.new_vehicle_id && !assignment.new_contractor_id);
+    });
+    
+    if (unassignedJobs.length > 0) {
+      toast.error(
+        `${unassignedJobs.length} job(s) have no field assignments and will move to PENDING status`
+      );
+      return false;
     }
-
     return true;
   };
 
@@ -189,26 +155,10 @@ export default function ApplyLeavePage() {
       return;
     }
 
-    // Comprehensive date validation
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    
-    if (end < start) {
-      toast.error("End date must be after start date");
-      return;
-    }
-    
-    if (start < today) {
-      toast.error("Cannot create leave for past dates");
-      return;
-    }
-    
-    // Optional: Prevent unreasonably long leaves (e.g., > 90 days)
-    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDiff > 90) {
-      toast.error("Leave period cannot exceed 90 days");
+    // Validate dates
+    const validation = validateDates(startDate, endDate);
+    if (!validation.valid) {
+      toast.error(validation.error!);
       return;
     }
 
@@ -229,31 +179,15 @@ export default function ApplyLeavePage() {
       const job_reassignments = filteredJobs.map((job: any) => {
         const assignment = jobAssignments[job.id];
         
-        // Always include job_id
-        const reassignment: any = {
-          job_id: job.id
+        // Always include job_id and all three reassignment fields explicitly
+        // Even if undefined, to maintain contract with backend
+        return {
+          job_id: job.id,
+          new_driver_id: assignment?.new_driver_id,
+          new_vehicle_id: assignment?.new_vehicle_id,
+          new_contractor_id: assignment?.new_contractor_id,
+          notes: `Reassigned due to ${leaveType} leave from ${startDate} to ${endDate}`
         };
-        
-        // Include additional fields if they exist in the assignment
-        if (assignment) {
-          if (assignment.reassignment_type) {
-            reassignment.reassignment_type = assignment.reassignment_type;
-          }
-          if (assignment.new_driver_id) {
-            reassignment.new_driver_id = assignment.new_driver_id;
-          }
-          if (assignment.new_vehicle_id) {
-            reassignment.new_vehicle_id = assignment.new_vehicle_id;
-          }
-          if (assignment.new_contractor_id) {
-            reassignment.new_contractor_id = assignment.new_contractor_id;
-          }
-          if (assignment.reassignment_type) {
-            reassignment.notes = `Reassigned due to ${leaveType} leave from ${startDate} to ${endDate}`;
-          }
-        }
-        
-        return reassignment;
       });
 
       // Create leave with reassignments atomically

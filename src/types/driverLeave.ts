@@ -31,7 +31,6 @@ export interface JobReassignment {
   original_driver_id: number;
   original_vehicle_id: number;
   original_contractor_id: number;
-  reassignment_type: 'driver' | 'vehicle' | 'contractor';
   new_driver_id?: number;
   new_vehicle_id?: number;
   new_contractor_id?: number;
@@ -68,7 +67,6 @@ export interface DriverLeaveCreateResponse {
 
 export interface JobReassignmentRequest {
   job_id: number;
-  reassignment_type: 'driver' | 'vehicle' | 'contractor';
   new_driver_id?: number;
   new_vehicle_id?: number;
   new_contractor_id?: number;
