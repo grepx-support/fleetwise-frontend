@@ -56,61 +56,54 @@ describe('Drivers CRUD E2E Tests', () => {
   cy.contains('tbody tr', 'Test Driver')
     .should('exist')
     .within(() => {
-      cy.get('td:last-child button').eq(0).click({ force: true }); // edit button
+      // First, find the edit button specifically
+      cy.get('button[aria-label="Edit driver"]').should('exist').click({ force: true });
     });
 
-  // Wait for a bit to allow the page to load
-  cy.wait(2000);
-
-  // Wait a bit more and then try to find the name input field 
-  cy.wait(1000);
+  // Wait for the edit form to be visible directly
+  cy.get('form', { timeout: 10000 }).should('be.visible');
+  cy.contains('label', 'Name').should('be.visible');
   
-  // Try a more generic approach to find and fill the name input
-  cy.get('input').should('exist');
-  // Find the first visible text input and fill it with the new name
-  cy.get('input[type="text"]').filter(':visible').first().should('be.visible').clear().type('Updated Test Driver');
+  // Find the name input field by its label and fill it with the new name
+  cy.contains('label', 'Name').next('input').should('be.visible').clear().type('Updated Test Driver');
 
   // Submit update
-  cy.contains('button[type="submit"]', /update/i).click();
+  cy.contains('button', /update/i).click();
 
-  // Wait for a bit to allow the update API call to complete
-  cy.wait(2000);
-
-  // Table reload
-  cy.visit('/drivers');
+  // Wait for redirection back to drivers list
+  cy.url().should('include', '/drivers');
   cy.wait('@getDrivers');
 
   // VERIFY updated name in table
   cy.contains('Updated Test Driver').should('exist');
 });
 
-     it('should delete a driver', () => {
-       // First verify that the 'Updated Test Driver' exists
-       cy.visit('/drivers');
-       cy.wait('@getDrivers');
-       cy.contains('Updated Test Driver').should('be.visible');
-       
-       // Refresh the page to ensure we have the latest data
-       cy.visit('/drivers');
-       cy.wait('@getDrivers');
-       
-       // Find and delete the 'Updated Test Driver'
-       cy.get('tbody tr').contains('Updated Test Driver').within(() => {
-         // Click delete button (look for trash icon or Delete text)
-         // Look for trash icon with more flexible selectors
-         cy.get('[class*="trash"], [class*="delete"], [class*="Delete"], svg, button[aria-label*="Delete"], button[title*="Delete"], button:contains("Delete"), .icon, [data-testid*="delete"]').first().click({ force: true });
-       });
-       
-       // Confirm deletion in the modal dialog
-       cy.contains('Delete Driver?').should('be.visible');
-       cy.contains('Are you sure you want to delete this driver?').should('be.visible');
-       cy.contains('Delete').click();
-       
-       // Wait for a bit to allow the delete API call to complete
-       cy.wait(1000);
-       
-       // Verify driver removed from list
-       cy.wait('@getDrivers');
-       cy.contains('Updated Test Driver').should('not.exist');
-     });
-   });
+it('should delete a driver', () => {
+  cy.visit('/drivers');
+  cy.wait('@getDrivers');
+
+  cy.contains('Updated Test Driver').should('be.visible');
+
+  // Refresh to ensure latest data
+  cy.visit('/drivers');
+  cy.wait('@getDrivers');
+
+  // Click delete button inside matching row
+  cy.contains('tbody tr', 'Updated Test Driver')
+    .within(() => {
+      cy.get('button:has(svg[class*="trash"])', { timeout: 8000 })
+        .click({ force: true });
+    });
+
+  // Confirm modal
+  cy.contains('Delete Driver?').should('be.visible');
+  cy.contains('Are you sure you want to delete this driver?').should('be.visible');
+  cy.contains('button', 'Delete').click();
+
+  // Wait for delete API + refresh list
+  cy.wait('@getDrivers'); 
+
+  // Final verification
+  cy.contains('Updated Test Driver').should('not.exist');
+});
+});

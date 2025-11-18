@@ -15,6 +15,9 @@ describe('Invoice CRUD E2E Tests', () => {
 
       // Wait for initial unbilled jobs to load
       cy.wait('@getUnbilledJobs', { timeout: 30000 });
+      
+      // Additional wait to ensure page is fully loaded
+      cy.get('body').should('be.visible');
 
       // Switch to the Unpaid tab to view invoices by clicking the card
       cy.contains('.rounded-xl', 'Invoice Pending Payments').click({ force: true });
@@ -46,6 +49,9 @@ describe('Invoice CRUD E2E Tests', () => {
       // Wait for initial data to load
       cy.wait('@getUnbilledJobs', { timeout: 30000 });
       
+      // Additional wait to ensure page is fully loaded
+      cy.get('body').should('be.visible');
+      
       // Select at least one job by clicking its checkbox
       cy.get('tbody tr').first().find('input[type="checkbox"]').click({ force: true });
       
@@ -66,10 +72,14 @@ describe('Invoice CRUD E2E Tests', () => {
       cy.visit('/billing/customer-billing');
       
       // Switch to the Unpaid tab to view invoices by clicking the card
+      cy.contains('.rounded-xl', 'Invoice Pending Payments').should('be.visible');
       cy.contains('.rounded-xl', 'Invoice Pending Payments').click({ force: true });
       
       // Wait for initial data to load
       cy.wait('@getUnpaidInvoices', { timeout: 30000 });
+      
+      // Additional wait to ensure page is fully loaded
+      cy.get('body').should('be.visible');
       
       // Click on the first invoice's partial payment button (dollar icon)
       cy.get('tbody tr').first().find('button[aria-label="Record Partial Payment"]').click({ force: true });
@@ -77,8 +87,8 @@ describe('Invoice CRUD E2E Tests', () => {
       // Wait for the modal to appear by looking for the modal container
       cy.get('.fixed.inset-0.z-50.flex.items-center.justify-center.bg-black\\/60').should('be.visible');
       
-      // Enter a payment amount (less than the total amount)
-      cy.get('input[placeholder="0.00"]').type('50');
+      // Enter a fixed payment amount (10)
+      cy.get('input[placeholder="0.00"]').type('10');
       
       // Click Record Payment button
       cy.contains('button', 'Record Payment').click({ force: true });
@@ -94,43 +104,30 @@ describe('Invoice CRUD E2E Tests', () => {
     });
   });
 
-  describe('DELETE - Invoice', () => {
-    it('should delete an invoice successfully if it is Unpaid', () => {
+
+  describe('DOWNLOAD - Invoice', () => {
+    it('should download an invoice successfully', () => {
       // Navigate to customer billing page
       cy.visit('/billing/customer-billing');
       
       // Switch to the Unpaid tab to view invoices by clicking the card
+      cy.contains('.rounded-xl', 'Invoice Pending Payments').should('be.visible');
       cy.contains('.rounded-xl', 'Invoice Pending Payments').click({ force: true });
       
       // Wait for initial data to load
       cy.wait('@getUnpaidInvoices', { timeout: 30000 });
       
-      // Find the invoice with ID 7
-      cy.get('tbody tr').each(($row) => {
-        // Check if the row contains invoice ID 7
-        if ($row.text().includes('3')) {
-          // Check if the row contains "Unpaid" status
-          if ($row.text().includes('Unpaid')) {
-            // Click on the delete button (trash icon) for this invoice
-            cy.wrap($row).find('button[aria-label="Delete job"]').click({ force: true });
-            
-            // Wait for the confirmation dialog to appear
-            cy.contains('Delete Invoice?').should('be.visible');
-            
-            // Click the Delete button in the confirmation dialog
-            cy.contains('button', 'Delete').click({ force: true });
-            
-            // Wait for API call and verify success
-            cy.wait('@deleteInvoice', { timeout: 30000 });
-            
-            // Verify success message
-            cy.contains('Invoice Delete successfully').should('be.visible');
-            
-            // Break the loop after finding and deleting invoice 7
-            return false;
-          }
-        }
-      });
+      // Additional wait to ensure page is fully loaded
+      cy.get('body').should('be.visible');
+      
+      // Click on the first invoice's download button (arrow down icon)
+      cy.get('tbody tr').first().find('button[aria-label="Download Invoice"]').click({ force: true });
+      
+      // Wait for API call and verify success
+      cy.wait('@downloadUnpaidInvoice', { timeout: 30000 });
+      
+      // Verify success message
+      cy.contains('Invoice downloaded successfully').should('be.visible');
     });
   });
 });

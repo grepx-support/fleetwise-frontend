@@ -23,7 +23,7 @@ describe('Jobs CRUD E2E Tests', () => {
       cy.get('tbody tr').should('have.length.at.least', 1);
     });
   });
-
+  
   describe('CREATE - New Job', () => {
     it('should create a new job successfully', () => {
       cy.visit('/jobs');
@@ -120,6 +120,125 @@ describe('Jobs CRUD E2E Tests', () => {
       
       // Take a screenshot to see what's in the table
       cy.screenshot('jobs-list-after-creation');
+    });
+  });
+  
+  describe('EDIT - Update Job', () => {
+    beforeEach(() => {
+      // Intercept job list and update API
+      cy.intercept('GET', '**/jobs**').as('getJobs');
+      cy.intercept('PUT', '**/jobs/**').as('updateJob');
+
+      // Visit jobs page
+      cy.visit('/jobs');
+      cy.wait('@getJobs');
+      
+      // Add wait to verify if timing is the issue
+      cy.wait(3000);
+    });
+
+    it('should filter by Job ID 110, edit the job, and verify passenger name update', () => {
+
+      // ✅ Step 1: Filter Job ID 110
+      cy.get('input[placeholder*="Filter job"]', { timeout: 10000 })
+        .should('be.visible')
+        .clear()
+        .type('110{enter}');
+
+      cy.wait(1500);
+
+      // Check if any rows are returned after filtering
+      cy.get('tbody tr', { timeout: 10000 }).then(($rows) => {
+        if ($rows.length > 0) {
+          // If rows exist, check if the first one contains '110'
+          cy.wrap($rows).first().should('contain.text', '110');
+          
+          // ✅ Step 2: Click EDIT button using the correct selector
+          // The edit button is rendered as a Button component with aria-label="Edit job"
+          // Breaking up the chain to avoid DOM detachment issues
+          cy.wrap($rows).first()
+            .find('button[aria-label="Edit job"]')
+            .as('editBtn')
+            .should('exist');
+          cy.get('@editBtn').click({ force: true });
+        } else {
+          // If no rows exist with ID 110, let's try to find any job and edit it
+          cy.log('Job ID 110 not found, trying to edit the first available job');
+          
+          // Get the first job in the table
+          cy.get('tbody tr').first().then(($row) => {
+            // Get the job ID from the row
+            const jobId = $row.find('td').eq(1).text().trim();
+            cy.log(`Attempting to edit job ID: ${jobId}`);
+            
+            // Click the edit button for this job
+            // The edit button is rendered as a Button component with aria-label="Edit job"
+            // Breaking up the chain to avoid DOM detachment issues
+            cy.wrap($row)
+              .find('button[aria-label="Edit job"]')
+              .as('editBtn')
+              .should('exist');
+            cy.get('@editBtn').click({ force: true });
+          });
+        }
+      });
+
+      // ✅ Step 3: Wait for modal to appear
+      cy.get('.fixed.inset-0', { timeout: 10000 }).should('be.visible');
+
+      // ✅ Step 4: Update Passenger Name
+      cy.contains('label', 'Passenger Name', { timeout: 5000 })
+        .next('input')
+        .clear()
+        .type('updated test passenger');
+
+      // ✅ Step 5: Save changes
+      cy.contains('button', 'Save Changes').click();
+      cy.wait('@updateJob').its('response.statusCode').should('eq', 200);
+
+      // ✅ Step 6: Success message
+      cy.contains('Job updated successfully', { timeout: 10000 }).should('be.visible');
+
+      // Close modal (if not auto-closed)
+      cy.get('body').then(($body) => {
+        if ($body.find('.fixed.inset-0').length > 0) {
+          cy.get('button[aria-label="Close edit modal"], button:contains("Close"), .close-button')
+            .first()
+            .click({ force: true });
+        }
+      });
+
+      cy.get('.fixed.inset-0', { timeout: 10000 }).should('not.exist');
+
+      // ✅ Step 9: Re-filter job to confirm update
+      cy.get('input[placeholder*="Filter job"]').clear().type('110{enter}');
+      cy.wait(1500);
+
+      cy.get('tbody tr', { timeout: 10000 })
+        .should('have.length', 1)
+        .and('contain.text', '110');
+
+      // ✅ Step 10: Reopen EDIT modal
+      cy.contains('td', '110')
+        .closest('tr')
+        .find('button[aria-label="Edit job"]')
+        .as('editBtn')
+        .should('be.visible');
+      cy.get('@editBtn').click({ force: true });
+
+      cy.get('.fixed.inset-0', { timeout: 10000 }).should('be.visible');
+
+      // ✅ Step 11: Validate updated passenger name
+      cy.contains('label', 'Passenger Name', { timeout: 5000 })
+        .next('input')
+        .should('have.value', 'updated test passenger');
+
+      // Close modal again
+      cy.get('button[aria-label="Close edit modal"], button:contains("Close"), .close-button')
+        .first()
+        .click({ force: true });
+
+      cy.get('.fixed.inset-0', { timeout: 10000 }).should('not.exist');
     });
   });
 

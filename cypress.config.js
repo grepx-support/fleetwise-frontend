@@ -7,7 +7,7 @@ module.exports = defineConfig({
     supportFile: 'cypress/support/e2e.ts',
       chromeWebSecurity: false,  
     env: {
-      apiUrl: 'http://localhost:5000', // Backend API
+      apiUrl: 'http://127.0.0.1:5000', // Backend API
     },
     
     // Performance optimizations

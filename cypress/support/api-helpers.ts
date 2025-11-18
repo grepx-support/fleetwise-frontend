@@ -52,9 +52,15 @@ export function setupApiInterceptions(): void {
   cy.intercept('POST', '/api/jobs').as('createJob'); // Create new job
   cy.intercept('PUT', '/api/jobs/*').as('updateJob'); // Update existing job
   cy.intercept('DELETE', '/api/jobs/*').as('deleteJob'); // Delete job
+  cy.intercept('POST', '/api/jobs/update_status/*').as('updateJobStatus'); // Update job status
+  cy.intercept('POST', '/api/jobs/audit/*').as('cancelJob'); // Cancel job
+  cy.intercept('POST', '/api/jobs/reinstate/*/').as('reinstateJob'); // Reinstate job
+  cy.intercept('POST', '/api/jobs/bulk-cancel').as('bulkCancelJobs'); // Bulk cancel jobs
   
-  // Unbilled jobs endpoint - allow real API call
+  // Unbilled jobs endpoint - allow real API call with proper auth
   cy.intercept('GET', '/api/jobs/unbilled*', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
     req.continue();
   }).as('getUnbilledJobs');
   
@@ -74,9 +80,13 @@ export function setupApiInterceptions(): void {
     req.continue();
   }).as('deleteInvoice');
   cy.intercept('GET', '/api/invoices/download/*', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
     req.continue();
   }).as('downloadInvoice');
   cy.intercept('GET', '/api/invoices/unpaid/download/*', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
     req.continue();
   }).as('downloadUnpaidInvoice');
   
@@ -88,6 +98,8 @@ export function setupApiInterceptions(): void {
   // Invoice reports endpoints
   cy.intercept('GET', '/api/invoices/report').as('getInvoiceReport');
   cy.intercept('GET', '/api/invoices/unpaid', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
     req.continue();
   }).as('getUnpaidInvoices');
   
@@ -149,7 +161,39 @@ export function setupApiInterceptions(): void {
           name: 'Admin User',
           roles: ['admin']
         }
+      },
+      headers: {
+        'Authorization': 'Bearer fake-jwt-token-for-testing'
       }
     });
   }).as('authMe');
+  
+  // Contractor billing endpoints
+  cy.intercept('POST', '/api/bills/contractor', (req) => {
+    req.continue();
+  }).as('generateContractorBill');
+  
+  cy.intercept('PUT', '/api/bills/*', (req) => {
+    req.continue();
+  }).as('updateBillStatus');
+  
+  cy.intercept('DELETE', '/api/bills/*', (req) => {
+    req.continue();
+  }).as('deleteBill');
+  
+  cy.intercept('GET', '/api/contractors/download/*', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
+    req.continue();
+  }).as('downloadContractorBill');
+  
+  cy.intercept('POST', '/api/bills/driver', (req) => {
+    req.continue();
+  }).as('generateDriverBill');
+  
+  cy.intercept('GET', '/api/drivers/download/*', (req) => {
+    // Ensure auth headers are sent with the request
+    req.headers['Authorization'] = `Bearer fake-jwt-token-for-testing`;
+    req.continue();
+  }).as('downloadDriverBill');
 }
