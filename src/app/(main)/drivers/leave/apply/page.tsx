@@ -225,24 +225,32 @@ export default function ApplyLeavePage() {
     setIsSaving(true);
     
     try {
-      // Prepare job reassignments data
-      const job_reassignments = Object.entries(jobAssignments).map(([jobId, assignment]) => {
-        // Only include fields that have values
+      // Prepare job reassignments data - include all job IDs regardless of field selection
+      const job_reassignments = filteredJobs.map((job: any) => {
+        const assignment = jobAssignments[job.id];
+        
+        // Always include job_id
         const reassignment: any = {
-          job_id: Number(jobId),
-          reassignment_type: assignment.reassignment_type,
-          notes: `Reassigned due to ${leaveType} leave from ${startDate} to ${endDate}`
+          job_id: job.id
         };
         
-        // Conditionally include only defined fields
-        if (assignment.new_driver_id) {
-          reassignment.new_driver_id = assignment.new_driver_id;
-        }
-        if (assignment.new_vehicle_id) {
-          reassignment.new_vehicle_id = assignment.new_vehicle_id;
-        }
-        if (assignment.new_contractor_id) {
-          reassignment.new_contractor_id = assignment.new_contractor_id;
+        // Include additional fields if they exist in the assignment
+        if (assignment) {
+          if (assignment.reassignment_type) {
+            reassignment.reassignment_type = assignment.reassignment_type;
+          }
+          if (assignment.new_driver_id) {
+            reassignment.new_driver_id = assignment.new_driver_id;
+          }
+          if (assignment.new_vehicle_id) {
+            reassignment.new_vehicle_id = assignment.new_vehicle_id;
+          }
+          if (assignment.new_contractor_id) {
+            reassignment.new_contractor_id = assignment.new_contractor_id;
+          }
+          if (assignment.reassignment_type) {
+            reassignment.notes = `Reassigned due to ${leaveType} leave from ${startDate} to ${endDate}`;
+          }
         }
         
         return reassignment;

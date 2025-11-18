@@ -59,10 +59,6 @@ export default function LeaveDetailsPage({ params }: { params: Promise<{ id: str
   
   // Handle delete leave
   const handleDeleteLeave = async () => {
-    if (!window.confirm("Are you sure you want to delete this leave? This action cannot be undone.")) {
-      return;
-    }
-    
     try {
       await deleteLeaveMutation.mutateAsync(leaveId);
       toast.success("Leave deleted successfully");
