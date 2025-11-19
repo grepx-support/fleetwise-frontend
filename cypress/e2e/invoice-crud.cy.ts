@@ -105,6 +105,9 @@ describe('Invoice CRUD E2E Tests', () => {
   });
 
 
+  
+
+
   describe('DOWNLOAD - Invoice', () => {
     it('should download an invoice successfully', () => {
       // Navigate to customer billing page
@@ -128,6 +131,44 @@ describe('Invoice CRUD E2E Tests', () => {
       
       // Verify success message
       cy.contains('Invoice downloaded successfully').should('be.visible');
+    });
+  });
+
+  describe('DELETE - Invoice', () => {
+    it('should delete an unpaid invoice successfully', () => {
+      // Navigate to customer billing page
+      cy.visit('/billing/customer-billing');
+      
+      // Switch to the Unpaid tab to view invoices by clicking the card
+      cy.contains('.rounded-xl', 'Invoice Pending Payments').should('be.visible');
+      cy.contains('.rounded-xl', 'Invoice Pending Payments').click({ force: true });
+      
+      // Wait for initial data to load
+      cy.wait('@getUnpaidInvoices', { timeout: 30000 });
+      
+      // Additional wait to ensure page is fully loaded
+      cy.get('body').should('be.visible');
+      
+      // Find invoice with ID 3 and click its delete button (trash icon)
+      cy.get('tbody tr').contains('td', '3')
+        .parent()
+        .find('button[title="Delete"]').click({ force: true });
+      
+      // Wait for confirmation modal to appear
+      cy.contains('Delete Invoice?').should('be.visible');
+      cy.contains('Are you sure you want to delete this invoice? This action cannot be undone.').should('be.visible');
+      
+      // Click Delete button in confirmation modal
+      cy.contains('button', 'Delete').click({ force: true });
+      
+      // Wait for API call and verify success
+      cy.wait('@deleteInvoice', { timeout: 30000 });
+      
+      // Verify success message
+      cy.contains('Invoice Delete successfully').should('be.visible');
+      
+      // Verify invoice with ID 3 is no longer in the table
+      cy.get('tbody tr').contains('td', '3').should('not.exist');
     });
   });
 });

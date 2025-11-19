@@ -135,6 +135,22 @@ export function setupApiInterceptions(): void {
       res.send(res.body);
     });
   }).as('getCustomers');
+  
+  cy.intercept('GET', '/api/customers/*', (req) => {
+    req.continue();
+  }).as('getCustomer');
+  
+  cy.intercept('POST', '/api/customers', (req) => {
+    req.continue();
+  }).as('createCustomer');
+  
+  cy.intercept('PUT', '/api/customers/*', (req) => {
+    req.continue();
+  }).as('updateCustomer');
+  
+  cy.intercept('DELETE', '/api/customers/*', (req) => {
+    req.continue();
+  }).as('deleteCustomer');
 
   // Intercept vehicles API calls
   cy.intercept('GET', '/api/vehicles*', (req) => {
@@ -167,6 +183,27 @@ export function setupApiInterceptions(): void {
       }
     });
   }).as('authMe');
+  
+  // Intercept contractors API calls
+  cy.intercept('GET', '/api/contractors*', (req) => {
+    req.continue();
+  }).as('getContractors');
+  
+  cy.intercept('GET', '/api/contractors/*', (req) => {
+    req.continue();
+  }).as('getContractor');
+  
+  cy.intercept('POST', '/api/contractors', (req) => {
+    req.continue();
+  }).as('createContractor');
+  
+  cy.intercept('PUT', '/api/contractors/*', (req) => {
+    req.continue();
+  }).as('updateContractor');
+  
+  cy.intercept('DELETE', '/api/contractors/*', (req) => {
+    req.continue();
+  }).as('deleteContractor');
   
   // Contractor billing endpoints
   cy.intercept('POST', '/api/bills/contractor', (req) => {
