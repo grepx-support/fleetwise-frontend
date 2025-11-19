@@ -2147,7 +2147,11 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
       }
       
       // Show error to user (you might want to add a toast notification here)
-      toast.error(errorMessage);
+      // Skip showing toast if this is a ServiceError that's already handled by useJobs hook
+      // Check if this error has already been shown by looking for specific patterns
+      if (!errorMessage.includes('Driver is on sick leave')) {
+        toast.error(errorMessage);
+      }
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 3000);
     }
