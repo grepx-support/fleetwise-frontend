@@ -43,6 +43,7 @@ import {
 } from '@/services/api/jobsApi';
 
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog';
+import TimePicker24Hour from '@/components/atoms/TimePicker24Hour';
 
 // Utility to get browser country code
 function getBrowserCountryCode() {
@@ -2111,12 +2112,13 @@ const handleAISuggestDriver = async (retryCount = 0) => {
       newErrors.dropoff_location = "Drop-off location is required";
     }
     
-    if (!formData.contractor_id || formData.contractor_id === 0) {
-      // For text-parsed jobs, having contractor_name is acceptable initially
-      if (!isTextParsedJob || !(initialData as any)?.contractor_name) {
-        newErrors.contractor_id = "Assigned To (Contractor) is required"; 
-      }
-    }
+    // Contractor is now optional - remove the validation check
+    // if (!formData.contractor_id || formData.contractor_id === 0) {
+    //   // For text-parsed jobs, having contractor_name is acceptable initially
+    //   if (!isTextParsedJob || !(initialData as any)?.contractor_name) {
+    //     newErrors.contractor_id = "Assigned To (Contractor) is required"; 
+    //   }
+    // }
     
     console.log('[JobForm] Setting errors:', newErrors);
     setErrors(newErrors);
@@ -2250,7 +2252,11 @@ const handleAISuggestDriver = async (retryCount = 0) => {
       }
       
       // Show error to user (you might want to add a toast notification here)
-      toast.error(errorMessage);
+      // Skip showing toast if this is a ServiceError that's already handled by useJobs hook
+      // Check if this error has already been shown by looking for specific patterns
+      if (!errorMessage.includes('Driver is on sick leave')) {
+        toast.error(errorMessage);
+      }
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 3000);
     }
@@ -2800,17 +2806,16 @@ const handleAISuggestDriver = async (retryCount = 0) => {
                     <label className="block text-sm font-medium text-gray-300">
                       Pickup Time <span className="text-red-400">*</span>
                     </label>
-                    <input
-                      type="time"
+                    <TimePicker24Hour
                       value={formData.pickup_time || ''}
-                      onChange={(e) => {
+                      onChange={(value) => {
                         // Only allow changes if fields are not locked
                         if (!fieldsLocked) {
-                          handleInputChange('pickup_time', e.target.value);
+                          handleInputChange('pickup_time', value);
                         }
                       }}
                       readOnly={fieldsLocked}
-                      className={`w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${fieldsLocked ? 'bg-gray-600 cursor-not-allowed' : ''}`}
+                      className={fieldsLocked ? 'bg-gray-600 cursor-not-allowed' : ''}
                     />
                     {errors.pickup_time && <p className="text-sm text-red-400">{errors.pickup_time}</p>}
                   </div>
@@ -3177,7 +3182,7 @@ const handleAISuggestDriver = async (retryCount = 0) => {
                         handleInputChange("contractor_id", v ? Number(v) : undefined);
                       }
                     }}
-                    required  
+                    // Removed required attribute
                     error={errors.contractor_id}  
                     options={[
                       { value: "", label: "Select Contractor" },
