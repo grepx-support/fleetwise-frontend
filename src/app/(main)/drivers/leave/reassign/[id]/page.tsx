@@ -114,23 +114,16 @@ export default function ReassignJobsPage({ params }: { params: Promise<{ id: str
       toast.success(reassignResponse.message || "Job reassignments submitted successfully");
 
       // Show individual success messages
-      if (reassignResponse.successful_jobs && Array.isArray(reassignResponse.successful_jobs)) {
-        reassignResponse.successful_jobs.forEach((item: any) => {
+      if (reassignResponse.success && Array.isArray(reassignResponse.success)) {
+        reassignResponse.success.forEach((item: any) => {
           toast.success(`Job ${item.job_id} successfully reassigned`);
         });
       }
 
       // Show any failed reassignments
-      if (reassignResponse.failed_jobs && Array.isArray(reassignResponse.failed_jobs)) {
-        reassignResponse.failed_jobs.forEach((item: any) => {
+      if (reassignResponse.failed && Array.isArray(reassignResponse.failed)) {
+        reassignResponse.failed.forEach((item: any) => {
           toast.error(`Failed to reassign job ${item.job_id}: ${item.error || 'Unknown error'}`);
-        });
-      }
-
-      // Show any skipped jobs (in-progress jobs that couldn't be reassigned)
-      if (reassignResponse.skipped_jobs && Array.isArray(reassignResponse.skipped_jobs)) {
-        reassignResponse.skipped_jobs.forEach((item: any) => {
-          toast(`Job ${item.job_id} skipped: ${item.reason || 'In-progress status'}`, { icon: '⚠️' });
         });
       }
       

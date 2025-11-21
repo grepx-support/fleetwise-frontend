@@ -66,3 +66,38 @@ export async function deleteImage(filename: string, field: string) {
   }
   return res.json();
 }
+
+// --- EMAIL SETTINGS API ---
+export async function getEmailSettings() {
+  const res = await fetch('/api/settings/email', { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch email settings');
+  return res.json();
+}
+
+export async function saveEmailSettings(emailSettings: any) {
+  const res = await fetch('/api/settings/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email_settings: emailSettings }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: 'Failed to save email settings' }));
+    throw new Error(errorData.error || 'Failed to save email settings');
+  }
+  return res.json();
+}
+
+export async function testEmailSettings(emailSettings: any) {
+  const res = await fetch('/api/settings/email/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email_settings: emailSettings }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ error: 'Failed to send test email' }));
+    throw new Error(errorData.error || 'Failed to send test email');
+  }
+  return res.json();
+}
