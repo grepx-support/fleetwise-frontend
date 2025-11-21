@@ -99,4 +99,7 @@ export interface ReassignJobsResponse {
   success: any[];
   failed: any[];
   total: number;
+  successful_jobs?: any[];  // Add this property to match the backend response
+  failed_jobs?: any[];      // Add this property to match the backend response
+  skipped_jobs?: any[];     // Add this property to match the backend response
 }

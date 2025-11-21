@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -752,10 +752,10 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
 
       const initialFormData = {
         ...defaultJobValues,
-        pickup_date: date,
-        pickup_time: time,
-        contractor_id: undefined,
-        ...normalizedInit
+        ...normalizedInit,
+        pickup_date: normalizedInit.pickup_date || date,
+        pickup_time: normalizedInit.pickup_time || time,
+        contractor_id: normalizedInit.contractor_id !== undefined ? normalizedInit.contractor_id : undefined,
       };
       
       // Determine initial status
@@ -3204,13 +3204,13 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                     {errors.midnight_surcharge && <p className="text-sm text-red-400">{errors.midnight_surcharge}</p>}
                     {customerMidnightSurchargePricing && (
                       <p className="text-xs text-blue-300">
-                        Customer rate: S$ {calculateMidnightSurcharge(
+                        Customer rate: S$ {(calculateMidnightSurcharge(
                           formData.pickup_time || '',
                           customerMidnightSurchargePricing,
                           [],
                           formData.vehicle_type_id,
                           midnightSurchargeService?.condition_config
-                        ).toFixed(2)}
+                        ) || 0).toFixed(2)}
                       </p>
                     )}
                     {!customerMidnightSurchargePricing && (
