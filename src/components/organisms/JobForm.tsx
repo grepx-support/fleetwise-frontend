@@ -553,9 +553,13 @@ const handleAISuggestDriver = async () => {
   controller = new AbortController();
   abortControllerRef.current = controller;
 
-    setIsAiLoading(true);
+  setIsAiLoading(true);
 
-    const payload = {}; // no pickup_time / vehicle_type_id needed
+  const payload = {
+      pickup_date: formData.pickup_date,
+      pickup_time: formData.pickup_time,
+    };
+  
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
