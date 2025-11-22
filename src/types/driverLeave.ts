@@ -98,6 +98,7 @@ export interface ReassignJobsRequest {
 export interface ReassignJobsResponse {
   success: boolean;
   message: string;
+  leave_status: 'pending' | 'approved';
   reassignment_summary: {
     total: number;
     successful: number;
@@ -120,6 +121,7 @@ export interface ReassignJobsResponse {
     reason: string;
     status: string;
   }>;
-  remaining_jobs_count: number;
-  remaining_job_ids: number[];
+  // Optional fields - only present when leave_status is 'pending'
+  remaining_jobs_count?: number;
+  remaining_job_ids?: number[];
 }

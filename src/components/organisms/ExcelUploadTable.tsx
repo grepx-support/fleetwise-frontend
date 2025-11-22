@@ -208,15 +208,6 @@ export default function ExcelUploadTable({
         return;
       }
 
-      console.log('✅ Reference data fetched:', {
-        customers: customersRes,
-        services: servicesRes,
-        vehicles: isCustomerUser ? 'skipped for customer user' : vehiclesRes,
-        drivers: isCustomerUser ? 'skipped for customer user' : driversRes,
-        contractors: contractorsRes,
-        vehicle_types: vehicleTypesRes
-      });
-
       setReferenceData({
         customers: Array.isArray(customersRes) ? customersRes : [],
         services: Array.isArray(servicesRes) ? servicesRes : [],
@@ -1541,7 +1532,7 @@ function EditForm({
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Pickup Time *
             </label>
-             <TimePicker24Hour
+            <TimePicker24Hour
               value={row.pickup_time}
               onChange={(value) => handleChange('pickup_time', value)}
               className={clsx('w-full', validationErrors.pickup_time && 'border-red-500 focus:ring-red-500 focus:border-red-500')}
@@ -1622,30 +1613,21 @@ function EditForm({
                 <span className="text-text-secondary">Loading...</span>
               </div>
             ) : (
-              <>
-                {console.log("🚗 Vehicle Type Data:", {
-                  vehicle_type: row.vehicle_type,
-                  vehicle_types: referenceData.vehicle_types
+              <select
+                key={`vehicle-type-${row.vehicle_type || 'none'}`}
+                defaultValue={row.vehicle_type || ""}
+                onChange={(e) => handleChange("vehicle_type", e.target.value)}
+                className={selectClassName}
+              >
+                <option value="">Select Vehicle Type</option>
+                {referenceData.vehicle_types?.map((type, index) => {
+                  return (
+                    <option key={type.id} value={type.name}>
+                      {type.name}
+                    </option>
+                  );
                 })}
-                <select
-                  key={`vehicle-type-${row.vehicle_type || 'none'}`}
-                  defaultValue={row.vehicle_type || ""}
-                  onChange={(e) => {
-                    console.log("✅ Vehicle Type selected:", e.target.value);
-                    handleChange("vehicle_type", e.target.value);
-                  }}
-                  className={selectClassName}
-                >
-                  <option value="">Select Vehicle Type</option>
-                  {referenceData.vehicle_types?.map((type, index) => {
-                    return (
-                      <option key={type.id} value={type.name}>
-                        {type.name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </>
+              </select>
             )}
           </div>
 
@@ -1742,12 +1724,6 @@ function EditForm({
                       };
                     }
                   }
-                  console.log("👔 Contractor Data:", {
-                    contractor_id: row.contractor_id,
-                    contractor: row.contractor,
-                    resolvedValue: contractorValue,
-                    contractors: referenceData.contractors
-                  });
                   return null;
                 })()}
                 <select
