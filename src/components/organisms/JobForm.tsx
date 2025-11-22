@@ -752,10 +752,10 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
 
       const initialFormData = {
         ...defaultJobValues,
+        pickup_date: date,
+        pickup_time: time,
+        contractor_id: undefined,
         ...normalizedInit,
-        pickup_date: normalizedInit.pickup_date || date,
-        pickup_time: normalizedInit.pickup_time || time,
-        contractor_id: normalizedInit.contractor_id !== undefined ? normalizedInit.contractor_id : undefined,
       };
       
       // Determine initial status
@@ -3207,7 +3207,7 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                           [],
                           formData.vehicle_type_id,
                           midnightSurchargeService?.condition_config
-                        ) || 0).toFixed(2)}
+                        ) ?? 0).toFixed(2)}
                       </p>
                     )}
                     {!customerMidnightSurchargePricing && (

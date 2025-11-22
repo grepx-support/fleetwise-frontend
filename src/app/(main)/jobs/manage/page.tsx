@@ -223,12 +223,11 @@ const ManageJobsPage = () => {
         driver_contact: '',
 
         // Preserve important fields that should be copied
-        service_type: latestJob.service_type || (latestJob.service ? latestJob.service.name : '') || '',
-        customer_remark: latestJob.customer_remark || undefined,
+        service_type: latestJob.service_type ?? latestJob.service?.name ?? '',
+        customer_remark: latestJob.customer_remark ?? undefined,
+        remarks: latestJob.customer_remark ?? undefined, // Ensure remarks are copied
         sub_customer_name: latestJob.sub_customer_name || '',
         booking_ref: latestJob.booking_ref || '',
-
-        // Keep other fields from the original job
       };
       
       // Ensure vehicle_type is a string when storing to context

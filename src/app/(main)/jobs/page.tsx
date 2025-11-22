@@ -364,10 +364,10 @@ const JobsPage = () => {
       
       const jobCopy = {
         ...jobCopyWithoutId,
-        // Preserve date/time fields instead of clearing them
-        // pickup_date: '',
-        // pickup_time: '',
-
+        // Preserve date/time fields from the original job
+        pickup_date: latestJob.pickup_date || '',
+        pickup_time: latestJob.pickup_time || '',
+        
         // Reset job status to default
         status: 'new' as const,
 
@@ -387,9 +387,9 @@ const JobsPage = () => {
         driver_contact: '',
 
         // Preserve important fields that should be copied
-        service_type: latestJob.service_type || (latestJob.service ? latestJob.service.name : '') || '',
-        customer_remark: latestJob.customer_remark || undefined,
-        remarks: latestJob.customer_remark || undefined, // Add this line to ensure remarks are copied
+        service_type: latestJob.service_type ?? latestJob.service?.name ?? '',
+        customer_remark: latestJob.customer_remark ?? undefined,
+        remarks: latestJob.customer_remark ?? undefined, // Add this line to ensure remarks are copied
         sub_customer_name: latestJob.sub_customer_name || '',
         booking_ref: latestJob.booking_ref || '',
         
