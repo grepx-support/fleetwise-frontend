@@ -222,7 +222,12 @@ const ManageJobsPage = () => {
         // keep vehicle_type and vehicle_type_id from the fetched job so the new form is pre-filled
         driver_contact: '',
 
-        // Keep sub_customer_name and booking_ref from the original job
+        // Preserve important fields that should be copied
+        service_type: latestJob.service_type ?? latestJob.service?.name ?? '',
+        customer_remark: latestJob.customer_remark ?? undefined,
+        remarks: latestJob.customer_remark ?? undefined, // Ensure remarks are copied
+        sub_customer_name: latestJob.sub_customer_name || '',
+        booking_ref: latestJob.booking_ref || '',
       };
       
       // Ensure vehicle_type is a string when storing to context

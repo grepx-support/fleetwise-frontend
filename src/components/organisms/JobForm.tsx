@@ -755,7 +755,7 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
         pickup_date: date,
         pickup_time: time,
         contractor_id: undefined,
-        ...normalizedInit
+        ...normalizedInit,
       };
       
       // Determine initial status
@@ -3201,13 +3201,13 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                     {errors.midnight_surcharge && <p className="text-sm text-red-400">{errors.midnight_surcharge}</p>}
                     {customerMidnightSurchargePricing && (
                       <p className="text-xs text-blue-300">
-                        Customer rate: S$ {calculateMidnightSurcharge(
+                        Customer rate: S$ {(calculateMidnightSurcharge(
                           formData.pickup_time || '',
                           customerMidnightSurchargePricing,
                           [],
                           formData.vehicle_type_id,
                           midnightSurchargeService?.condition_config
-                        ).toFixed(2)}
+                        ) ?? 0).toFixed(2)}
                       </p>
                     )}
                     {!customerMidnightSurchargePricing && (
