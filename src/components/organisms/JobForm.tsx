@@ -52,7 +52,11 @@ function getBrowserCountryCode() {
   const parts = locale.split('-');
   return parts.length > 1 ? parts[1].toLowerCase() : 'us';
 }
-
+export const analytics = {
+  track: (eventName: string, payload?: Record<string, any>) => {
+    console.log(`[Analytics] Event: ${eventName}`, payload || {});
+  }
+};
 // Default job values
 const defaultJobValues: JobFormData = {
   // Customer Information
@@ -516,6 +520,125 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
   const { data: allServices = [] } = useGetAllServices();
   const { data: allVehicleTypes = [] } = useGetAllVehicleTypes();
   const { data: allContractors = [] } = useGetAllContractors();
+
+  // AI Suggest Driver
+const [isAiLoading, setIsAiLoading] = useState(false);
+const aiToastId = useRef<string | null>(null);
+const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+const AI_MAX_RETRIES = 3;
+const AI_RETRY_DELAY_MS = 5000;
+
+useEffect(() => {
+  // Cleanup on unmount
+  return () => {
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    if (aiToastId.current) toast.dismiss(aiToastId.current);
+  };
+}, []);
+
+const abortControllerRef = useRef<AbortController | null>(null);
+
+const handleAISuggestDriver = async () => {
+  const startTime = Date.now();
+  let controller: AbortController | null = null;
+
+  analytics.track('ai_driver_suggest_clicked');
+
+  try {
+    if (abortControllerRef.current) {
+    abortControllerRef.current.abort();
+  }
+
+  controller = new AbortController();
+  abortControllerRef.current = controller;
+
+  setIsAiLoading(true);
+
+  const payload = {
+      pickup_date: formData.pickup_date,
+      pickup_time: formData.pickup_time,
+    };
+  
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+  if (!res.ok) {
+  let errorMessage = `HTTP ${res.status}`;
+  const contentType = res.headers.get("content-type");
+
+  if (contentType?.includes("application/json")) {
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // If JSON parsing fails, fallback to status text
+      errorMessage = res.statusText || errorMessage;
+    }
+  } else {
+    // For non-JSON responses (HTML, plain text, etc.)
+    errorMessage = res.statusText || errorMessage;
+  }
+
+  throw new Error(errorMessage);
+}
+
+
+    const data = await res.json();
+    console.log("[AI DRIVER RESULT]", data);
+
+    if (!data.ranking || data.ranking.length === 0) {
+      toast.error("AI could not find any available drivers");
+      return;
+    }
+
+    const topDriver = data.best_driver || data.ranking[0];
+    console.log("Top Driver", topDriver);
+
+   const driverExists = allDrivers?.some(
+  d => 
+    d.id === topDriver.driver_id &&
+    d.status === "Active" 
+);
+
+if (!driverExists) {
+  toast.error("Recommended driver is not available");
+  return;
+}
+
+
+
+    handleInputChange("driver_id", topDriver.driver_id);
+    toast.success(`AI selected: ${topDriver.name}`);
+    analytics.track('ai_driver_suggest_success', {
+      driver_id: topDriver.driver_id,
+      driver_name: topDriver.name,
+      latency_ms: Date.now() - startTime
+    });
+
+  } catch (err: any) {
+    if (err.name === "AbortError") return; // Ignore cancelled requests
+    console.error("AI Suggest error:", err);
+
+    // Track failure
+    analytics.track('ai_driver_suggest_failed', {
+      error: err.message,
+    });
+
+    toast.error("Could not get AI recommendation");
+  } finally {
+    if (controller === abortControllerRef.current) {
+      setIsAiLoading(false);
+      abortControllerRef.current = null;
+    }
+  }
+};
+
   
   // Address lookup hooks
   const { lookup: pickupLookup, result: pickupAddressResult, loading: pickupAddressLoading, error: pickupAddressError, forceRefresh: pickupForceRefresh } = useAddressLookup();
@@ -2483,9 +2606,9 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
             <button
               type="button"
               onClick={handleSave}
-              disabled={isLoading || saveStatus === "saving"}
+              disabled={isLoading || saveStatus === "saving" || isAiLoading}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                isLoading || saveStatus === "saving"
+                isLoading || saveStatus === "saving" || isAiLoading
                   ? 'bg-blue-800 cursor-not-allowed' 
                   : 'bg-blue-600 hover:bg-blue-700'
               }`}
@@ -2996,38 +3119,77 @@ const { data: allDriversRaw = [] } = useGetAllDrivers({
                     disabled={isFieldLocked("vehicle_id")}
                   />
                   <div className="space-y-1">
-                    <SelectField
-                      label="Driver"
-                      value={formData.driver_id || ""}
-                      onChange={(v) => {
-                        if (!isFieldLocked("driver_id")) {
-                          handleInputChange("driver_id", parseInt(v, 10));
-                        }
-                      }}
-                      error={errors.driver_id}
-                      showQuickAdd={!isFieldLocked("driver_id")}
-                      quickAddType="driver"
-                      options={[
-                        { value: "", label: "Select Driver" },
-                        ...allDrivers.map((d) => ({ value: d.id, label: d.name })),
-                      ]}
-                      className={isFieldLocked("driver_id") ? "opacity-75" : ""}
-                      disabled={isFieldLocked("driver_id")}
-                    />
-                    {/* Driver Conflict Warning */}
-                    {driverConflictWarning && (
-                      <div className="mt-2 p-3 bg-yellow-900 border border-yellow-700 rounded-lg">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-yellow-400 mt-0.5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <p className="text-sm text-yellow-200">
-                            {driverConflictWarning}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+  {/* Driver Label and Buttons */}
+  <div className="flex items-center justify-between">
+    <label className="text-sm font-semibold text-gray-200">Driver</label>
+    <div className="flex items-center space-x-2">
+      {/* AI Suggest Driver Button */}
+      <button
+        type="button"
+        onClick={() => handleAISuggestDriver()}
+        disabled={isAiLoading || isFieldLocked("driver_id")}
+        className={`px-2.5 py-1 text-[11px] font-semibold text-white rounded-md shadow-md transition-all ${
+          isAiLoading || isFieldLocked("driver_id")
+            ? "bg-gradient-to-r from-pink-500/60 to-yellow-400/60 cursor-not-allowed"
+            : "bg-gradient-to-r from-pink-500 to-yellow-400 hover:from-pink-400 hover:to-yellow-300"
+        }`}
+      >
+        {isAiLoading ? "Processing..." : "AI Suggest Driver"}
+      </button>
+
+      {/* Quick Add Button */}
+      <button
+        type="button"
+        onClick={() => openQuickAddModal("driver")}
+        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-md transition-all"
+      >
+        + Quick Add
+      </button>
+    </div>
+  </div>
+
+  {/* Driver Select Field */}
+  <SelectField
+    label=""
+    value={formData.driver_id || ""}
+    onChange={(v) => {
+      if (!isFieldLocked("driver_id")) {
+        handleInputChange("driver_id", parseInt(v, 10));
+      }
+    }}
+    error={errors.driver_id}
+    showQuickAdd={false}
+    options={[
+      { value: "", label: "Select Driver" },
+      ...allDrivers.map((d) => ({ value: d.id, label: d.name })),
+    ]}
+    className={isFieldLocked("driver_id") ? "opacity-75" : ""}
+    disabled={isFieldLocked("driver_id")}
+  />
+
+  {/* Conflict Warning */}
+  {driverConflictWarning && (
+    <div className="mt-2 p-3 bg-yellow-900 border border-yellow-700 rounded-lg">
+      <div className="flex items-start">
+        <svg
+          className="w-5 h-5 text-yellow-400 mt-0.5 mr-2 flex-shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          />
+        </svg>
+        <p className="text-sm text-yellow-200">{driverConflictWarning}</p>
+      </div>
+    </div>
+  )}
+</div>
+
                   
                   <SelectField
                     label="Assigned To"
