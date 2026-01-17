@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@/context/UserContext';
 import { Card } from '@/components/atoms/Card';
 import { Button } from '@/components/atoms/Button';
 import { format, addDays, subDays, parseISO, differenceInHours, isSameDay, isToday, isYesterday } from 'date-fns';
@@ -34,6 +35,7 @@ interface CalendarBlock {
   job?: Job;
   leave?: DriverLeave;
   driverId: number;
+  date: string; // Added date field to track which date this block belongs to
 }
 
 interface DriverWithAvailability {
@@ -105,6 +107,12 @@ export default function DriverCalendarPage() {
   const [driverStatusFilter, setDriverStatusFilter] = useState<string>('all');
   const [hoveredBlock, setHoveredBlock] = useState<{ block: CalendarBlock; position: { x: number; y: number } } | null>(null);
 
+  // State for job detail modal
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  
+  // Get current user context to determine if they're a driver
+  const { user } = useUser();
+  
   // Fetch data
   const { data: drivers = [], isLoading: driversLoading } = useGetAllDrivers();
   
@@ -112,20 +120,30 @@ export default function DriverCalendarPage() {
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
     queryKey: ['jobs', 'calendar', DAYS_TO_SHOW],
     queryFn: async () => {
+      console.log('Fetching calendar data for', DAYS_TO_SHOW, 'days');
       const response = await jobsApi.getJobsCalendar(DAYS_TO_SHOW);
+      console.log('Calendar API response:', response);
       return response;
     },
     refetchInterval: 30000,
   });
   
   const { data: leaves = [], isLoading: leavesLoading } = useGetDriverLeaves({});
+  
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Leaves data loaded:', leaves);
+      if (leaves.length > 0) {
+        console.log('Sample leave record:', leaves[0]);
+      }
+    }
+  }, [leaves]);
 
-  // Generate date range (5 days centered on selected date)
+  // Generate date range (5 days starting from selected date)
   const dateRange = useMemo(() => {
     const dates = [];
-    const startDate = subDays(selectedDate, 2);
     for (let i = 0; i < DAYS_TO_SHOW; i++) {
-      dates.push(addDays(startDate, i));
+      dates.push(addDays(selectedDate, i));
     }
     return dates;
   }, [selectedDate]);
@@ -133,11 +151,30 @@ export default function DriverCalendarPage() {
   // Process driver availability data
   const driversWithAvailability = useMemo<DriverWithAvailability[]>(() => {
     if (driversLoading || calendarLoading || leavesLoading) return [];
+    
+    // Debug logging for calendar data
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Calendar data received:', calendarData);
+      console.log('Drivers data:', drivers);
+    }
+    
+    // Check if current user is a driver
+    const isDriver = user?.response?.user?.roles?.some((role: any) => role.name === 'driver');
+    const currentDriverId = user?.response?.user?.driver_id;
+    
+    // Filter drivers based on user role
+    const filteredDrivers = drivers.filter(driver => {
+      // If current user is a driver, only show their own data
+      if (isDriver && currentDriverId) {
+        return driver.id === currentDriverId;
+      }
+      // Otherwise, apply the status filter
+      return driverStatusFilter === 'all' || driver.status?.toLowerCase() === driverStatusFilter;
+    });
 
-    return drivers
-      .filter(driver => driverStatusFilter === 'all' || driver.status?.toLowerCase() === driverStatusFilter)
+    return filteredDrivers
       .map(driver => {
-        const availabilityBlocks: CalendarBlock[] = [];
+        const allAvailabilityBlocks: Record<string, CalendarBlock[]> = {};
         const today = new Date();
         const yesterday = subDays(today, 1);
         
@@ -145,65 +182,179 @@ export default function DriverCalendarPage() {
         dateRange.forEach(date => {
           const dateString = format(date, 'yyyy-MM-dd');
           
-          // Find jobs for this driver on this date
-          const driverJobs = (calendarData?.calendar_data?.[dateString]?.[driver.id] || []) as Job[];
+          // Get the day's data from calendar API response
+          const dayData = calendarData?.calendar_data?.[dateString]?.[driver.id] || [];
           
-          // Find leaves for this driver on this date
-          const driverLeaves = (leaves || []).filter(leave => 
-            leave.driver_id === driver.id &&
-            leave.status === 'approved' &&
-            new Date(leave.start_date) <= date &&
-            new Date(leave.end_date) >= date
-          );
-
-          // Create hourly blocks
-          for (let hour = 0; hour < 24; hour++) {
-            const startTime = `${hour.toString().padStart(2, '0')}:00`;
-            const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
+          // Extract jobs from the day data
+          // Jobs have customer_name property
+          const driverJobs: Job[] = dayData.filter(item => {
+            // Check if this item has job properties
+            return item.hasOwnProperty('customer_name') && item.hasOwnProperty('id') && item.hasOwnProperty('status');
+          }).map(item => item as unknown as Job);
+          
+          // Check for leaves from the separate leaves data for this specific date
+          // Find all relevant leaves for this driver (approved and pending)
+          const allDriverLeaves = (leaves || []).filter((leave: any) => 
+            leave.driver_id === driver.id && (leave.status === 'approved' || leave.status === 'pending')
+          ) as DriverLeave[];
+          
+          // Then check which leaves apply to the current date
+          const driverLeaves: DriverLeave[] = allDriverLeaves.filter(leave => {
+            if (process.env.NODE_ENV === 'development') {
+              // Parse dates without time zones affecting the date
+              const startDate = new Date(leave.start_date.split('T')[0] + 'T00:00:00');
+              const endDate = new Date(leave.end_date.split('T')[0] + 'T00:00:00');
+              const currentDate = new Date(date);
+              
+              // Normalize dates to compare only the date part (ignore time)
+              const normStartDate = new Date(startDate);
+              const normEndDate = new Date(endDate);
+              const normCurrentDate = new Date(currentDate);
+              normStartDate.setHours(0, 0, 0, 0);
+              normEndDate.setHours(0, 0, 0, 0);
+              normCurrentDate.setHours(0, 0, 0, 0);
+              
+              console.log(`Checking leave:`, {
+                driverId: leave.driver_id,
+                leaveId: leave.id,
+                leaveType: leave.leave_type,
+                rawStartDate: leave.start_date,
+                rawEndDate: leave.end_date,
+                startDate: startDate,
+                endDate: endDate,
+                currentDate: date,
+                normStartDate: normStartDate,
+                normEndDate: normEndDate,
+                normCurrentDate: normCurrentDate,
+                isInRange: normCurrentDate >= normStartDate && normCurrentDate <= normEndDate
+              });
+            }
             
-            // Check for jobs in this hour
-            const hourJobs = driverJobs.filter(job => {
-              if (!job.pickup_time) return false;
-              const [pickupHour] = job.pickup_time.split(':').map(Number);
-              return pickupHour === hour;
+            // Parse dates without time zones affecting the date
+            const startDate = new Date(leave.start_date.split('T')[0] + 'T00:00:00');
+            const endDate = new Date(leave.end_date.split('T')[0] + 'T00:00:00');
+            const currentDate = new Date(date);
+            
+            // Normalize dates to compare only the date part (ignore time)
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(0, 0, 0, 0);
+            currentDate.setHours(0, 0, 0, 0);
+            
+            return currentDate >= startDate && currentDate <= endDate;
+          });
+          
+          // Enhanced debug logging
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`=== CALENDAR DATA SUMMARY ===`);
+            console.log(`Driver ${driver.id} (${driver.name}):`);
+            console.log(`  ${dateString}: ${driverJobs.length} jobs, ${driverLeaves.length} leaves, 0 unavailable`);
+            
+            driverJobs.forEach((job, index) => {
+              console.log(`    Job ${job.id}: ${job.pickup_date || 'N/A'} ${job.pickup_time || 'N/A'} | ${job.pickup_location || 'N/A'} → ${job.dropoff_location || 'N/A'} | Status: ${job.status || 'N/A'}`);
             });
+            
+            driverLeaves.forEach((leave, index) => {
+              console.log(`    Leave ${leave.id}: ${leave.leave_type || 'N/A'} | ${leave.start_date || 'N/A'} to ${leave.end_date || 'N/A'} | Status: ${leave.status || 'N/A'}`);
+            });
+            
+            if (driverJobs.length === 0 && driverLeaves.length === 0) {
+              console.log(`    No jobs or leaves found for this date`);
+            }
+            
+            console.log(`Calendar data keys:`, Object.keys(calendarData?.calendar_data || {}));
+            console.log(`All data for this date:`, calendarData?.calendar_data?.[dateString]);
+          }
 
-            // Check for leave in this hour
-            const hasLeave = driverLeaves.length > 0;
-
-            if (hourJobs.length > 0) {
-              // Job block
-              availabilityBlocks.push({
+          // Initialize array for this date
+          allAvailabilityBlocks[dateString] = allAvailabilityBlocks[dateString] || [];
+          const availabilityBlocksForDate = allAvailabilityBlocks[dateString];
+          
+          // Process leaves first - if driver is on leave for this specific date
+          if (driverLeaves.length > 0) {
+            const leaveStartTime = '00:00';
+            const leaveEndTime = '24:00';
+            
+            availabilityBlocksForDate.push({
+              type: 'leave',
+              startTime: leaveStartTime,
+              endTime: leaveEndTime,
+              leave: driverLeaves[0],
+              driverId: driver.id,
+              date: dateString
+            });
+          } else {
+            // Process jobs only if driver is not on leave
+            driverJobs.forEach(job => {
+              if (!job.pickup_time) return;
+              
+              const [pickupHour] = job.pickup_time.split(':').map(Number);
+              const startTime = `${pickupHour.toString().padStart(2, '0')}:00`;
+              // Assuming 1-hour duration for now, in a real scenario we'd calculate actual duration
+              const endTimeHour = pickupHour + 1;
+              const endTime = `${endTimeHour.toString().padStart(2, '0')}:00`;
+              
+              // Create job block
+              availabilityBlocksForDate.push({
                 type: 'job',
                 startTime,
                 endTime,
-                job: hourJobs[0], // Take first job if multiple
-                driverId: driver.id
+                job,
+                driverId: driver.id,
+                date: dateString
               });
-            } else if (hasLeave) {
-              // Leave block
-              availabilityBlocks.push({
-                type: 'leave',
-                startTime,
-                endTime,
-                leave: driverLeaves[0],
-                driverId: driver.id
+            });
+            
+            // Fill remaining hours with available blocks
+            for (let hour = 0; hour < 24; hour++) {
+              const startTime = `${hour.toString().padStart(2, '0')}:00`;
+              const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
+              
+              // Check if there's already a block for this time slot
+              const hasExistingBlock = availabilityBlocksForDate.some(block => {
+                const blockStartHour = parseInt(block.startTime.split(':')[0]);
+                const blockEndHour = parseInt(block.endTime.split(':')[0]);
+                return (blockStartHour <= hour && hour < blockEndHour);
               });
-            } else {
-              // Available block
-              availabilityBlocks.push({
-                type: 'available',
-                startTime,
-                endTime,
-                driverId: driver.id
-              });
+              
+              if (!hasExistingBlock) {
+                availabilityBlocksForDate.push({
+                  type: 'available',
+                  startTime,
+                  endTime,
+                  driverId: driver.id,
+                  date: dateString
+                });
+              }
             }
           }
+          
+          // Sort blocks by start time and type to ensure proper rendering order
+          // Order: leave blocks first (so they appear underneath), then job blocks, then available/unavailable
+          availabilityBlocksForDate.sort((a, b) => {
+            // First sort by start time
+            const aHour = parseInt(a.startTime.split(':')[0]);
+            const bHour = parseInt(b.startTime.split(':')[0]);
+            
+            if (aHour !== bHour) {
+              return aHour - bHour;
+            }
+            
+            // If same start time, prioritize by type
+            const getTypePriority = (type: string) => {
+              switch(type) {
+                case 'leave': return 1; // Leave at bottom
+                case 'job': return 2;   // Job in middle
+                default: return 3;      // Available/unavailable at top
+              }
+            };
+            
+            return getTypePriority(a.type) - getTypePriority(b.type);
+          });
         });
 
-        // Calculate today's stats
-        const todayDateString = format(today, 'yyyy-MM-dd');
-        const todayJobs = (calendarData?.calendar_data?.[todayDateString]?.[driver.id] || []) as Job[];
+        // Calculate today's stats - use the selected date as "today" for consistency with UI
+        const selectedTodayDateString = format(selectedDate, 'yyyy-MM-dd');
+        const todayJobs = (calendarData?.calendar_data?.[selectedTodayDateString]?.[driver.id] || []) as Job[];
         const todayStats = {
           totalJobs: todayJobs.length,
           totalHours: todayJobs.reduce((sum, job) => sum + 1, 0), // Simplified
@@ -214,8 +365,9 @@ export default function DriverCalendarPage() {
           }, {} as Record<string, number>)
         };
 
-        // Calculate yesterday's stats
-        const yesterdayDateString = format(yesterday, 'yyyy-MM-dd');
+        // Calculate yesterday's stats - use the day before the selected date
+        const selectedYesterday = subDays(selectedDate, 1);
+        const yesterdayDateString = format(selectedYesterday, 'yyyy-MM-dd');
         const yesterdayJobs = (calendarData?.calendar_data?.[yesterdayDateString]?.[driver.id] || []) as Job[];
         const yesterdayStats = {
           totalJobs: yesterdayJobs.length,
@@ -227,9 +379,15 @@ export default function DriverCalendarPage() {
           }, {} as Record<string, number>)
         };
 
+        // Combine all date-specific blocks into a single array
+        const combinedAvailabilityBlocks: CalendarBlock[] = [];
+        Object.values(allAvailabilityBlocks).forEach(blocks => {
+          combinedAvailabilityBlocks.push(...blocks);
+        });
+        
         return {
           driver,
-          availabilityBlocks,
+          availabilityBlocks: combinedAvailabilityBlocks,
           todayStats,
           yesterdayStats
         };
@@ -329,6 +487,15 @@ export default function DriverCalendarPage() {
               <div className="text-gray-300 text-xs">
                 {format(new Date(block.leave.start_date), 'MMM d')} - {format(new Date(block.leave.end_date), 'MMM d')}
               </div>
+              <div className="mt-1 pt-1 border-t border-gray-700">
+                <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                  block.leave.status === 'approved' ? 'bg-green-500/20 text-green-400' : 
+                  block.leave.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' : 
+                  'bg-gray-500/20 text-gray-400'
+                }`}>
+                  {block.leave.status?.toUpperCase() || 'UNKNOWN'}
+                </span>
+              </div>
               {block.leave.reason && (
                 <div className="text-gray-400 text-xs italic mt-1">
                   "{block.leave.reason}"
@@ -370,7 +537,7 @@ export default function DriverCalendarPage() {
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold text-green-400">${stats.totalEarnings.toFixed(2)}</div>
-          <div className="text-xs text-gray-400">Earnings</div>
+          <div className="text-xs text-gray-400">Total Earnings</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold text-yellow-400">
@@ -382,14 +549,18 @@ export default function DriverCalendarPage() {
       <div className="mt-3 pt-3 border-t border-gray-700">
         <div className="text-xs text-gray-400 mb-1">Jobs by Status:</div>
         <div className="flex flex-wrap gap-1">
-          {Object.entries(stats.jobsByStatus).map(([status, count]) => (
-            <span 
-              key={status}
-              className={`px-2 py-1 text-xs rounded-full ${getStatusColor(status as string)}`}
-            >
-              {getStatusLabel(status as string)}: {String(count)}
-            </span>
-          ))}
+          {Object.entries(stats.jobsByStatus).length > 0 ? (
+            Object.entries(stats.jobsByStatus).map(([status, count]) => (
+              <span 
+                key={status}
+                className={`px-2 py-1 text-xs rounded-full ${getStatusColor(status as string)}`}
+              >
+                {getStatusLabel(status as string)}: {String(count)}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-gray-500 italic">No jobs</span>
+          )}
         </div>
       </div>
     </Card>
@@ -403,6 +574,16 @@ export default function DriverCalendarPage() {
     );
   }
 
+  // Handler for job block click
+  const handleJobClick = (job: Job) => {
+    setSelectedJob(job);
+  };
+  
+  // Close modal handler
+  const closeModal = () => {
+    setSelectedJob(null);
+  };
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
@@ -503,15 +684,10 @@ export default function DriverCalendarPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-white truncate">{driver.name}</div>
-                    <div className="text-xs text-gray-400">
-                      {driver.vehicle?.number || 'No Vehicle'}
-                    </div>
-                    <div className={`text-xs px-2 py-1 rounded-full mt-1 inline-block ${
-                      driver.status?.toLowerCase() === 'active' 
-                        ? 'bg-green-500/20 text-green-400' 
-                        : 'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {driver.status}
+                    <div className="text-xs text-gray-400 flex gap-2">
+                      <span>Vehicle: {driver.vehicle?.number || 'None'}</span>
+                      <span className="text-gray-500">|</span>
+                      <span>Status: {driver.status || 'Unknown'}</span>
                     </div>
                   </div>
                 </div>
@@ -519,11 +695,6 @@ export default function DriverCalendarPage() {
                 {/* Availability Blocks for each day */}
                 {dateRange.map(date => {
                   const dateString = format(date, 'yyyy-MM-dd');
-                  const dayBlocks = availabilityBlocks.filter(block => {
-                    // Simple way to match blocks to dates - improve if needed
-                    return true; // Placeholder logic
-                  });
-
                   return (
                     <div 
                       key={`${driver.id}-${dateString}`} 
@@ -538,10 +709,85 @@ export default function DriverCalendarPage() {
                         />
                       ))}
                       
-                      {/* Sample block visualization - would need more sophisticated logic */}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-xs text-gray-500">Timeline View</div>
-                      </div>
+                      {/* Render availability blocks */}
+                      {availabilityBlocks
+                        .filter(block => {
+                          // Match blocks that belong to this specific date and driver
+                          const dateMatches = block.date === dateString;
+                          const driverMatches = block.driverId === driver.id;
+                          
+                          const isMatch = dateMatches && driverMatches;
+                          if (process.env.NODE_ENV === 'development' && isMatch) {
+                            console.log(`Block ${block.type} for ${dateString} matched:`, block);
+                          }
+                          return isMatch;
+                        })
+                        .map((block, idx) => {
+                          const startHour = parseInt(block.startTime.split(':')[0]);
+                          const endHour = parseInt(block.endTime.split(':')[0]);
+                          const duration = endHour - startHour;
+                          const widthPercent = (duration / 24) * 100; // Width based on actual duration
+                          const leftPercent = (startHour / 24) * 100;
+                          
+                          let bgColor = 'bg-white';
+                          let borderClass = 'border border-gray-600/30';
+                          if (block.type === 'job') {
+                            bgColor = 'bg-blue-500';
+                            borderClass = 'border-2 border-blue-400';
+                          }
+                          else if (block.type === 'leave') {
+                            bgColor = 'bg-orange-500';
+                            borderClass = 'border-2 border-orange-400';
+                          }
+                          else if (block.type === 'unavailable') {
+                            bgColor = 'bg-gray-500';
+                            borderClass = 'border border-gray-400/50';
+                          }
+                          else {
+                            bgColor = 'bg-white/20'; // available - subtle white
+                            borderClass = 'border border-gray-500/30';
+                          }
+                          
+                          return (
+                            <div
+                              key={`${block.driverId}-${dateString}-${idx}`}
+                              className={`absolute h-full ${bgColor} ${borderClass} ${block.type === 'job' ? 'cursor-pointer ring-1 ring-blue-300/50' : 'cursor-default'} transition-all duration-200 hover:opacity-90 hover:scale-[1.02] ${block.type === 'job' ? 'hover:brightness-110' : ''}`}
+                              style={{
+                                left: `${leftPercent}%`,
+                                width: `${widthPercent}%`
+                              }}
+                              onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setHoveredBlock({
+                                  block,
+                                  position: { x: rect.left, y: rect.bottom + 10 }
+                                });
+                              }}
+                              onMouseLeave={() => setHoveredBlock(null)}
+                              onClick={() => {
+                                console.log('Block clicked, type:', block.type, 'Has job data:', !!block.job);
+                                if (block.type === 'job' && block.job) {
+                                  console.log('Job block clicked:', block.job);
+                                  handleJobClick(block.job);
+                                } else {
+                                  console.log('Non-job block clicked - Type:', block.type, 'Can be clicked:', block.type === 'job');
+                                }
+                              }}
+                            >
+                              {block.type === 'job' && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="w-2 h-2 bg-white/80 rounded-full"></div>
+                                </div>
+                              )}
+                              {block.type === 'leave' && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="w-2 h-2 bg-white/60 rounded-full"></div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      }
                     </div>
                   );
                 })}
@@ -577,6 +823,114 @@ export default function DriverCalendarPage() {
       </div>
 
       {hoveredBlock && <BlockTooltip />}
+      
+      {/* Job Detail Modal */}
+      {selectedJob && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold text-white">Job Details</h2>
+                <button 
+                  onClick={closeModal}
+                  className="text-gray-400 hover:text-white hover:bg-gray-700 p-2 rounded-lg"
+                >
+                  <XCircleIcon className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="p-4 bg-gray-700/50 rounded-lg">
+                  <h3 className="font-semibold text-gray-300 mb-2">Job Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Job ID:</span>
+                      <span className="text-white">#{selectedJob.id}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Status:</span>
+                      <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(selectedJob.status || '')}`}>
+                        {getStatusLabel(selectedJob.status || '')}
+                      </span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Service Type:</span>
+                      <span className="text-white">{selectedJob.service_type}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Base Price:</span>
+                      <span className="text-white">${selectedJob.base_price}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-gray-700/50 rounded-lg">
+                  <h3 className="font-semibold text-gray-300 mb-2">Customer Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Name:</span>
+                      <span className="text-white">{selectedJob.customer_name}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Phone:</span>
+                      <span className="text-white">{selectedJob.customer_mobile}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Email:</span>
+                      <span className="text-white">{selectedJob.passenger_email || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-gray-700/50 rounded-lg">
+                  <h3 className="font-semibold text-gray-300 mb-2">Pickup Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Date:</span>
+                      <span className="text-white">{selectedJob.pickup_date}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Time:</span>
+                      <span className="text-white">{selectedJob.pickup_time}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Location:</span>
+                      <span className="text-white">{selectedJob.pickup_location}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-gray-700/50 rounded-lg">
+                  <h3 className="font-semibold text-gray-300 mb-2">Dropoff Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Location:</span>
+                      <span className="text-white">{selectedJob.dropoff_location}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Passenger:</span>
+                      <span className="text-white">{selectedJob.passenger_name}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="text-gray-400 w-32">Contact:</span>
+                      <span className="text-white">{selectedJob.passenger_mobile}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 flex justify-end gap-3">
+                <button 
+                  onClick={closeModal}
+                  className="border border-gray-600 text-gray-300 hover:bg-gray-700 px-4 py-2 rounded-lg"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
