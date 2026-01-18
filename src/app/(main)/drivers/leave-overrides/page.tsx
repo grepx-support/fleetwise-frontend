@@ -10,14 +10,23 @@ import { LeaveOverridesTable } from '@/components/organisms/LeaveOverridesTable'
 import { LeaveOverrideModal } from '@/components/organisms/LeaveOverrideModal';
 import { format } from "date-fns";
 
+// Utility function to safely format time values
+const formatTimeDisplay = (time: string | any): string => {
+  if (!time) return '--:--';
+  const timeStr = String(time);
+  return timeStr.substring(0, 5); // Extract HH:MM from HH:MM:SS or other formats
+};
+
 export default function LeaveOverridesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const leaveIdParam = searchParams.get('leaveId');
 
-  const [selectedLeaveId, setSelectedLeaveId] = useState<number | null>(
-    leaveIdParam ? parseInt(leaveIdParam) : null
-  );
+  const [selectedLeaveId, setSelectedLeaveId] = useState<number | null>(() => {
+    if (!leaveIdParam) return null;
+    const parsed = parseInt(leaveIdParam, 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : null;
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending'>('approved');
   const [filterDriver, setFilterDriver] = useState<number | null>(null);

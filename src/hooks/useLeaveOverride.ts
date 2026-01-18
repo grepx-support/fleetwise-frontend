@@ -12,6 +12,7 @@ import {
   BulkCreateOverrideRequest,
   BulkCreateResponse,
   AvailabilityWindow,
+  DeleteOverrideResponse,
 } from '@/services/api/leaveOverrideApi';
 
 /**
@@ -90,7 +91,7 @@ export function useBulkCreateOverrides() {
 export function useDeleteOverride() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutation<DeleteOverrideResponse, Error, { leaveId: number; overrideId: number }>({
     mutationFn: ({ leaveId, overrideId }: { leaveId: number; overrideId: number }) =>
       deleteOverride(leaveId, overrideId),
     onSuccess: (_, { leaveId }) => {

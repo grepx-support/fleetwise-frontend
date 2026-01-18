@@ -18,26 +18,24 @@ export default function BulkLeaveOverridesPage() {
   // Form state
   const [selectedLeaveIds, setSelectedLeaveIds] = useState<number[]>([]);
   const [overrideDate, setOverrideDate] = useState('');
-  const [startTime, setStartTime] = useState('09:00:00');
-  const [endTime, setEndTime] = useState('17:00:00');
+  const [startTime, setStartTime] = useState('09:00');  // HH:MM format for HTML5 time input
+  const [endTime, setEndTime] = useState('17:00');      // HH:MM format for HTML5 time input
   const [reason, setReason] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [searchFilter, setSearchFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending'>('approved');
   const [showResults, setShowResults] = useState(false);
   const [results, setResults] = useState<any>(null);
 
-  // Filter approved leaves only
+  // Filter approved leaves only (business rule: only approved leaves can have overrides)
   const approvedLeaves = useMemo(() => {
     return allLeaves.filter((leave) => {
-      const matchesStatus = statusFilter === 'all' || leave.status === statusFilter;
       const matchesSearch =
         !searchFilter ||
         leave.driver?.name?.toLowerCase().includes(searchFilter.toLowerCase());
 
-      return matchesStatus && matchesSearch && leave.status === 'approved';
+      return leave.status === 'approved' && matchesSearch;
     });
-  }, [allLeaves, statusFilter, searchFilter]);
+  }, [allLeaves, searchFilter]);
 
   // Get unique drivers for header display
   const selectedDrivers = useMemo(() => {
@@ -212,10 +210,10 @@ export default function BulkLeaveOverridesPage() {
 
               <div className="p-6">
                 <div className="space-y-3">
-                  {results.failed.map((failure: any, idx: number) => {
+                  {results.failed.map((failure: any) => {
                     const leave = allLeaves.find(l => l.id === failure.driver_leave_id);
                     return (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/30">
+                      <div key={failure.driver_leave_id} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/30">
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">
                             {leave?.driver?.name || `Leave ${failure.driver_leave_id}`}
@@ -303,23 +301,6 @@ export default function BulkLeaveOverridesPage() {
               >
                 {selectedLeaveIds.length === approvedLeaves.length ? 'Deselect All' : 'Select All'}
               </button>
-
-              {/* Status Filter */}
-              <div className="flex gap-2">
-                {(['all', 'approved', 'pending'] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-                      statusFilter === status
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </button>
-                ))}
-              </div>
 
               {errors.selectedLeaves && (
                 <p className="text-sm text-red-600 dark:text-red-400">{errors.selectedLeaves}</p>

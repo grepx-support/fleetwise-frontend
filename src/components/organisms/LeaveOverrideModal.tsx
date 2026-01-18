@@ -29,8 +29,8 @@ export function LeaveOverrideModal({
 
   // Form state
   const [overrideDate, setOverrideDate] = useState('');
-  const [startTime, setStartTime] = useState('09:00:00');
-  const [endTime, setEndTime] = useState('17:00:00');
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('17:00');
   const [reason, setReason] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -38,14 +38,15 @@ export function LeaveOverrideModal({
   useEffect(() => {
     if (override) {
       setOverrideDate(override.override_date);
-      setStartTime(override.start_time);
-      setEndTime(override.end_time);
+      // Convert HH:MM:SS to HH:MM for input display
+      setStartTime(override.start_time.substring(0, 5));
+      setEndTime(override.end_time.substring(0, 5));
       setReason(override.override_reason);
     } else {
       // Set default values
       setOverrideDate(leaveStartDate);
-      setStartTime('09:00:00');
-      setEndTime('17:00:00');
+      setStartTime('09:00');
+      setEndTime('17:00');
       setReason('');
     }
     setErrors({});

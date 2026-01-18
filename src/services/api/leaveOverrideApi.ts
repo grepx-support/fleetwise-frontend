@@ -98,19 +98,38 @@ export async function createOverride(
 export async function bulkCreateOverrides(
   data: BulkCreateOverrideRequest
 ): Promise<BulkCreateResponse> {
-  // Note: The endpoint path in the backend is /api/driver-leaves/<leave_id>/overrides/bulk
-  // For bulk operations, we use the first leave ID in the list
-  const firstLeaveId = data.driver_leave_ids[0];
   const response = await api.post<BulkCreateResponse>(
-    `/api/driver-leaves/${firstLeaveId}/overrides/bulk`,
+    '/api/driver-leaves/overrides/bulk',
     data
   );
   return response.data;
 }
 
+export interface AffectedJob {
+  job_id: number;
+  customer: string;
+  pickup_date: string;
+  pickup_time: string;
+  status: string;
+  service: string;
+}
+
+export interface DeleteOverrideResponse {
+  message: string;
+  override_id: number;
+  affected_jobs: AffectedJob[];
+}
+
+// Get affected jobs for an override (before deletion)
+export async function getAffectedJobsForOverride(leaveId: number, overrideId: number): Promise<AffectedJob[]> {
+  const response = await api.get<AffectedJob[]>(`/api/driver-leaves/${leaveId}/overrides/${overrideId}/affected-jobs`);
+  return response.data;
+}
+
 // Delete an override (soft delete)
-export async function deleteOverride(leaveId: number, overrideId: number): Promise<void> {
-  await api.delete(`/api/driver-leaves/${leaveId}/overrides/${overrideId}`);
+export async function deleteOverride(leaveId: number, overrideId: number): Promise<DeleteOverrideResponse> {
+  const response = await api.delete<DeleteOverrideResponse>(`/api/driver-leaves/${leaveId}/overrides/${overrideId}`);
+  return response.data;
 }
 
 // Get availability windows (overrides) for a leave on a specific date

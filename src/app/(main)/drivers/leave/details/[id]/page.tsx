@@ -8,6 +8,13 @@ import { useGetOverridesForLeave } from "@/hooks/useLeaveOverride";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
 
+// Utility function to safely format time values
+const formatTimeDisplay = (time: string | any): string => {
+  if (!time) return '--:--';
+  const timeStr = String(time);
+  return timeStr.substring(0, 5); // Extract HH:MM from HH:MM:SS or other formats
+};
+
 export default function LeaveDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap the params promise
   const unwrappedParams = React.use(params);
@@ -352,7 +359,7 @@ export default function LeaveDetailsPage({ params }: { params: Promise<{ id: str
                                 {format(new Date(override.override_date), 'EEE, MMM d, yyyy')}
                               </p>
                               <p className="text-sm text-gray-600 dark:text-gray-400">
-                                {override.start_time} - {override.end_time}
+                                {formatTimeDisplay(override.start_time)} - {formatTimeDisplay(override.end_time)}
                               </p>
                             </div>
                             <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs font-semibold rounded-full">
