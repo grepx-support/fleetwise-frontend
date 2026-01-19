@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { useJobs } from "@/hooks/useJobs";
-import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
+import { format, startOfMonth, endOfMonth, parseISO, isValid } from "date-fns";
 import { Button } from "@/components/ui/button";
 
 import { Badge } from "@/components/atoms/Badge";
@@ -22,7 +22,7 @@ import {
   FileTextIcon,
   DollarSignIcon
 } from "lucide-react";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 
 // Import chart components
 import {
@@ -73,16 +73,17 @@ const CustomerDashboardPage = () => {
   
   const { jobs: allJobs = [], isLoading: jobsLoading } = useJobs();
   
-  // Type assertion to handle type mismatch
-  const typedJobs = allJobs as unknown as ApiJob[];
+  const typedJobs = allJobs || []; // Properly typed by useJobs hook, with fallback to empty array
   
   // Get invoices via API call
   const [fetchedInvoices, setFetchedInvoices] = useState<any[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
   
   useEffect(() => {
     const fetchInvoices = async () => {
       if (!user?.customer_id) return;
+      setInvoicesError(null);
       
       try {
         const response = await axios.get(`/api/invoices`, {
@@ -92,6 +93,11 @@ const CustomerDashboardPage = () => {
       } catch (error) {
         console.error("Error fetching invoices:", error);
         setFetchedInvoices([]);
+        setInvoicesError(
+          (error instanceof AxiosError && error.response?.status === 403)
+            ? 'Access denied to invoices'
+            : 'Failed to load invoices. Please try again later.'
+        );
       } finally {
         setInvoicesLoading(false);
       }
@@ -108,6 +114,26 @@ const CustomerDashboardPage = () => {
   const [selectedJob, setSelectedJob] = useState<ApiJob | null>(null);
   const [isJobDetailOpen, setIsJobDetailOpen] = useState(false);
 
+  // Handle keyboard events for modal accessibility
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isJobDetailOpen) {
+        setIsJobDetailOpen(false);
+      }
+    };
+    
+    if (isJobDetailOpen) {
+      document.addEventListener('keydown', handleEscape);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isJobDetailOpen]);
+
   // Filter data by customer_id and date range
   const filteredJobs = useMemo(() => {
     if (!user?.customer_id) return [];
@@ -115,10 +141,18 @@ const CustomerDashboardPage = () => {
     return typedJobs
       .filter(job => job.customer_id === user.customer_id)
       .filter(job => {
+        if (!job.pickup_date) return false;
         const jobDate = parseISO(job.pickup_date);
+        if (!isValid(jobDate)) return false;
         return jobDate >= dateRange.from && jobDate <= dateRange.to;
       })
-      .sort((a, b) => new Date(b.pickup_date).getTime() - new Date(a.pickup_date).getTime())
+      .sort((a, b) => {
+        if (!a.pickup_date || !b.pickup_date) return 0;
+        const dateA = parseISO(a.pickup_date);
+        const dateB = parseISO(b.pickup_date);
+        if (!isValid(dateA) || !isValid(dateB)) return 0;
+        return dateB.getTime() - dateA.getTime();
+      })
       .slice(0, 10); // Last 10 jobs
   }, [typedJobs, user?.customer_id, dateRange]);
 
@@ -137,7 +171,7 @@ const CustomerDashboardPage = () => {
 
     return typedJobs.filter(job => 
       job.customer_id === user.customer_id && 
-      job.status.toLowerCase() === 'active'
+      job.status?.toLowerCase() === 'active'
     ).length;
   }, [typedJobs, user?.customer_id]);
 
@@ -146,7 +180,7 @@ const CustomerDashboardPage = () => {
 
     return typedJobs.filter(job => 
       job.customer_id === user.customer_id && 
-      job.status.toLowerCase() === 'pending'
+      job.status?.toLowerCase() === 'pending'
     ).length;
   }, [typedJobs, user?.customer_id]);
 
@@ -159,9 +193,12 @@ const CustomerDashboardPage = () => {
   
     return typedJobs.filter(job => 
       job.customer_id === user.customer_id && 
-      job.status.toLowerCase() === "completed" &&
-      parseISO(job.pickup_date) >= startOfMonthDate &&
-      parseISO(job.pickup_date) <= endOfMonthDate
+      job.status?.toLowerCase() === "completed" &&
+      job.pickup_date &&
+      (() => {
+        const jobDate = parseISO(job.pickup_date);
+        return isValid(jobDate) && jobDate >= startOfMonthDate && jobDate <= endOfMonthDate;
+      })()
     ).length;
   }, [typedJobs, user?.customer_id]);
   
@@ -207,9 +244,14 @@ const CustomerDashboardPage = () => {
 
     return typedJobs.filter(job => 
       job.customer_id === user.customer_id && 
-      job.status.toLowerCase() === 'completed' &&
-      parseISO(job.pickup_date) >= startOfToday &&
-      parseISO(job.pickup_date) <= endOfToday
+      job.status?.toLowerCase() === 'completed' &&
+      job.pickup_date &&
+      (() => {
+        const pickupDate = parseISO(job.pickup_date);
+        return isValid(pickupDate) &&
+        pickupDate >= startOfToday &&
+        pickupDate <= endOfToday;
+      })()
     ).length;
   }, [typedJobs, user?.customer_id]);
   
@@ -218,7 +260,8 @@ const CustomerDashboardPage = () => {
 
     return typedJobs.filter(job => 
       job.customer_id === user.customer_id && 
-      (job.status.toLowerCase() === 'pending' || new Date(job.pickup_date) > today)
+      (job.status?.toLowerCase() === 'pending' || 
+       (job.pickup_date && new Date(job.pickup_date) > today))
     ).length;
   }, [typedJobs, user?.customer_id]);
   
@@ -229,9 +272,13 @@ const CustomerDashboardPage = () => {
     const futureJobs = typedJobs
       .filter(job => 
         job.customer_id === user.customer_id && 
+        job.pickup_date &&
         new Date(job.pickup_date) > today
       )
-      .sort((a, b) => new Date(a.pickup_date).getTime() - new Date(b.pickup_date).getTime());
+      .sort((a, b) => {
+        if (!a.pickup_date || !b.pickup_date) return 0;
+        return new Date(a.pickup_date).getTime() - new Date(b.pickup_date).getTime();
+      });
       
     return futureJobs.length > 0 ? futureJobs[0].pickup_date : null;
   }, [typedJobs, user?.customer_id]);
@@ -246,9 +293,12 @@ const CustomerDashboardPage = () => {
     return typedJobs
       .filter(job => 
         job.customer_id === user.customer_id && 
-        job.status.toLowerCase() === 'completed' &&
-        parseISO(job.pickup_date) >= startOfMonthDate &&
-        parseISO(job.pickup_date) <= endOfMonthDate &&
+        job.status?.toLowerCase() === 'completed' &&
+        job.pickup_date &&
+        (() => {
+          const jobDate = parseISO(job.pickup_date);
+          return isValid(jobDate) && jobDate >= startOfMonthDate && jobDate <= endOfMonthDate;
+        })() &&
         job.final_price
       )
       .reduce((sum, job) => sum + (job.final_price || 0), 0);
@@ -264,9 +314,12 @@ const CustomerDashboardPage = () => {
     return typedJobs
       .filter(job => 
         job.customer_id === user.customer_id && 
-        job.status.toLowerCase() === 'completed' &&
-        parseISO(job.pickup_date) >= lastMonthStart &&
-        parseISO(job.pickup_date) <= lastMonthEnd &&
+        job.status?.toLowerCase() === 'completed' &&
+        job.pickup_date &&
+        (() => {
+          const jobDate = parseISO(job.pickup_date);
+          return isValid(jobDate) && jobDate >= lastMonthStart && jobDate <= lastMonthEnd;
+        })() &&
         job.final_price
       )
       .reduce((sum, job) => sum + (job.final_price || 0), 0);
@@ -278,7 +331,7 @@ const CustomerDashboardPage = () => {
     
     return fetchedInvoices.filter(invoice => 
       invoice.customer_id === user.customer_id && 
-      (invoice.status.toLowerCase() === 'pending' || invoice.status.toLowerCase() === 'unpaid')
+      (invoice.status?.toLowerCase() === 'pending' || invoice.status?.toLowerCase() === 'unpaid')
     ).length;
   }, [fetchedInvoices, user?.customer_id]);
   
@@ -317,7 +370,7 @@ const CustomerDashboardPage = () => {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const dayJobs = jobsForCustomer.filter(job => 
         job.pickup_date === dateStr && 
-        job.status.toLowerCase() === 'completed' &&
+        job.status?.toLowerCase() === 'completed' &&
         job.final_price
       );
       
@@ -343,12 +396,12 @@ const CustomerDashboardPage = () => {
     
     const customerInvoices = fetchedInvoices.filter(inv => inv.customer_id === user.customer_id);
     
-    const paidInvoices = customerInvoices.filter(inv => inv.status.toLowerCase() === 'paid').length;
+    const paidInvoices = customerInvoices.filter(inv => inv.status?.toLowerCase() === 'paid').length;
     const pendingInvoicesCount = customerInvoices.filter(inv => 
-      inv.status.toLowerCase() === 'pending' || inv.status.toLowerCase() === 'unpaid'
+      inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'unpaid'
     ).length;
     const overdueInvoices = customerInvoices.filter(inv => 
-      inv.status.toLowerCase() === 'overdue'
+      inv.status?.toLowerCase() === 'overdue'
     ).length;
     
     return [
@@ -373,7 +426,7 @@ const CustomerDashboardPage = () => {
     return fetchedInvoices
       .filter(inv => 
         inv.customer_id === user.customer_id && 
-        inv.status.toLowerCase() === 'paid'
+        inv.status?.toLowerCase() === 'paid'
       )
       .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
   }, [fetchedInvoices, user?.customer_id]);
@@ -384,7 +437,7 @@ const CustomerDashboardPage = () => {
     return fetchedInvoices
       .filter(inv => 
         inv.customer_id === user.customer_id && 
-        (inv.status.toLowerCase() === 'pending' || inv.status.toLowerCase() === 'unpaid')
+        (inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'unpaid')
       )
       .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
   }, [fetchedInvoices, user?.customer_id]);
@@ -395,7 +448,7 @@ const CustomerDashboardPage = () => {
     return fetchedInvoices
       .filter(inv => 
         inv.customer_id === user.customer_id && 
-        inv.status.toLowerCase() === 'overdue'
+        inv.status?.toLowerCase() === 'overdue'
       )
       .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
   }, [fetchedInvoices, user?.customer_id]);
@@ -514,6 +567,12 @@ const CustomerDashboardPage = () => {
             <h2 className="text-2xl font-bold text-white">Revenue Intelligence</h2>
           </div>
           
+          {invoicesError && (
+            <div className="mb-4 p-4 bg-red-500/10 border border-red-500 rounded-lg text-red-400">
+              {invoicesError}
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="text-center p-4 bg-gray-700 rounded-lg border border-gray-600">
               <div className="text-2xl font-bold text-green-400">${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -535,90 +594,26 @@ const CustomerDashboardPage = () => {
         </div>
       </div>
       
-      {/* Recent Jobs Section */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-white">Recent Jobs</h2>
-          <Button 
-            variant="outline" 
-            onClick={() => router.push('/jobs')}
-            className="text-white border-gray-500 hover:bg-gray-600 hover:border-gray-400"
-          >
-            View All Jobs
-          </Button>
-        </div>
 
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          {jobsLoading ? (
-            <div className="p-6 text-center text-gray-400">Loading jobs...</div>
-          ) : filteredJobs.length === 0 ? (
-            <div className="p-6 text-center text-gray-400">No jobs found</div>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-700">
-              <thead className="bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Job ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-gray-800 divide-y divide-gray-700">
-                {filteredJobs.map((job) => (
-                  <tr 
-                    key={job.id} 
-                    className="hover:bg-gray-750 cursor-pointer"
-                    onClick={() => handleJobClick(job)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-white font-medium">#{job.id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge 
-                        variant={
-                          job.status.toLowerCase() === 'completed' ? 'success' :
-                          job.status.toLowerCase() === 'active' ? 'default' :
-                          job.status.toLowerCase() === 'pending' ? 'secondary' :
-                          'destructive'
-                        }
-                      >
-                        {job.status}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-300">
-                      <div className="flex items-center gap-1">
-                        <CalendarIcon className="h-4 w-4" />
-                        {format(parseISO(job.pickup_date), 'MMM dd')}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Button 
-                        size="sm" 
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleJobClick(job);
-                        }}
-                        className="text-primary hover:bg-primary/10"
-                      >
-                        <EyeIcon className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
 
 
       
       {/* Job Detail Modal */}
       {isJobDetailOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 text-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setIsJobDetailOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="job-detail-title"
+        >
+          <div 
+            className="bg-gray-800 text-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Job Details</h2>
+                <h2 id="job-detail-title" className="text-xl font-semibold">Job Details</h2>
                 <button 
                   onClick={() => setIsJobDetailOpen(false)}
                   className="text-gray-400 hover:text-white"
@@ -639,9 +634,9 @@ const CustomerDashboardPage = () => {
                       <div>
                         <Badge 
                           variant={
-                            selectedJob.status.toLowerCase() === 'completed' ? 'success' :
-                            selectedJob.status.toLowerCase() === 'active' ? 'default' :
-                            selectedJob.status.toLowerCase() === 'pending' ? 'secondary' :
+                            selectedJob.status?.toLowerCase() === 'completed' ? 'success' :
+                            selectedJob.status?.toLowerCase() === 'active' ? 'default' :
+                            selectedJob.status?.toLowerCase() === 'pending' ? 'secondary' :
                             'destructive'
                           }
                         >
@@ -659,7 +654,10 @@ const CustomerDashboardPage = () => {
                     <div>
                       <h3 className="text-sm font-medium text-gray-400">Date & Time</h3>
                       <p className="text-white">
-                        {format(parseISO(selectedJob.pickup_date), 'MMM dd, yyyy')} at {selectedJob.pickup_time}
+                        {selectedJob.pickup_date ? (() => {
+                          const jobDate = parseISO(selectedJob.pickup_date);
+                          return isValid(jobDate) ? format(jobDate, 'MMM dd, yyyy') : 'Invalid Date';
+                        })() : 'No Date'} at {selectedJob.pickup_time}
                       </p>
                     </div>
                   </div>

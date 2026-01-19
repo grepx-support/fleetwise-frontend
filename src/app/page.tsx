@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '../context/UserContext';
+import { getPrimaryRole } from '@/utils/getUserRole';
 
 export default function RootPage() {
   const { isLoggedIn, isLoading, user } = useUser();
@@ -11,13 +12,9 @@ export default function RootPage() {
   useEffect(() => {
     if (!isLoading && isLoggedIn && user) {
       // Extract role from user data
-      const roles = user?.roles || [];
-      const primaryRole = Array.isArray(roles) && roles.length > 0 
-        ? typeof roles[0] === 'string' ? roles[0] : roles[0]?.name || roles[0]?.role || 'guest'
-        : 'guest';
+      const primaryRole = getPrimaryRole(user);
       
       console.log('Root page redirect - user:', user);
-      console.log('Root page redirect - roles:', roles);
       console.log('Root page redirect - primaryRole:', primaryRole);
       
       if (primaryRole === 'admin') {
