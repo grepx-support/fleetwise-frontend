@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { Card } from '@/components/atoms/Card';
 import { Button } from '@/components/atoms/Button';
-import { format, addDays, subDays, parseISO, differenceInHours, isSameDay, isToday, isYesterday } from 'date-fns';
+import { format, addDays, subDays, parseISO, differenceInHours, isSameDay, isToday, isYesterday, startOfDay, isWithinInterval } from 'date-fns';
 import { 
   TruckIcon, 
   UserIcon, 
@@ -100,6 +100,19 @@ const getLeaveTypeLabel = (leaveType: string) => {
   return leaveType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
+function isJob(item: any): item is Job {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    'customer_name' in item &&
+    'id' in item &&
+    typeof item.id === 'number' &&
+    'status' in item &&
+    typeof item.status === 'string' &&
+    'pickup_time' in item
+  );
+}
+
 export default function DriverCalendarPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -117,15 +130,24 @@ export default function DriverCalendarPage() {
   const { data: drivers = [], isLoading: driversLoading } = useGetAllDrivers();
   
   // Fetch calendar data
-  const { data: calendarData, isLoading: calendarLoading } = useQuery({
+  const { data: calendarData, isLoading: calendarLoading, error: calendarError } = useQuery({
     queryKey: ['jobs', 'calendar', DAYS_TO_SHOW],
     queryFn: async () => {
-      console.log('Fetching calendar data for', DAYS_TO_SHOW, 'days');
-      const response = await jobsApi.getJobsCalendar(DAYS_TO_SHOW);
-      console.log('Calendar API response:', response);
-      return response;
+      try {
+        console.log('Fetching calendar data for', DAYS_TO_SHOW, 'days');
+        const response = await jobsApi.getJobsCalendar(DAYS_TO_SHOW);
+        console.log('Calendar API response:', response);
+        return response;
+      } catch (error) {
+        console.error('Failed to fetch calendar data:', error);
+        throw error;
+      }
     },
     refetchInterval: 30000,
+    retry: 2,
+    retryDelay: 1000,
+    // Disable refetch during user interaction
+    enabled: !hoveredBlock && !selectedJob,
   });
   
   const { data: leaves = [], isLoading: leavesLoading } = useGetDriverLeaves({});
@@ -138,6 +160,33 @@ export default function DriverCalendarPage() {
       }
     }
   }, [leaves]);
+  
+  // Update selected job when calendar data changes
+  useEffect(() => {
+    if (selectedJob && calendarData) {
+      // Find updated job in new data by iterating through the nested structure
+      let updatedJob: Job | undefined;
+      
+      for (const dateKey in calendarData.calendar_data) {
+        const dateData = calendarData.calendar_data[dateKey];
+        for (const driverId in dateData) {
+          const driverJobs = dateData[driverId];
+          if (Array.isArray(driverJobs)) {
+            const foundJob = driverJobs.find((job: any) => job && job.id === selectedJob.id);
+            if (foundJob) {
+              updatedJob = foundJob as Job;
+              break;
+            }
+          }
+        }
+        if (updatedJob) break;
+      }
+      
+      if (updatedJob) {
+        setSelectedJob(updatedJob);
+      }
+    }
+  }, [calendarData, selectedJob]);
 
   // Generate date range (5 days starting from selected date)
   const dateRange = useMemo(() => {
@@ -159,13 +208,24 @@ export default function DriverCalendarPage() {
     }
     
     // Check if current user is a driver
-    const isDriver = user?.response?.user?.roles?.some((role: any) => role.name === 'driver');
-    const currentDriverId = user?.response?.user?.driver_id;
+    const userRoles = user?.response?.user?.roles || user?.roles || [];
+    const isDriver = Array.isArray(userRoles) && userRoles.some((role: any) => 
+      role?.name === 'driver' || role === 'driver'
+    );
+    const currentDriverId = user?.response?.user?.driver_id || user?.driver_id;
+    
+    // Log warning if structure is unexpected
+    if (!user?.response?.user && user) {
+      console.warn('Unexpected user context structure:', user);
+    }
     
     // Filter drivers based on user role
     const filteredDrivers = drivers.filter(driver => {
-      // If current user is a driver, only show their own data
-      if (isDriver && currentDriverId) {
+      if (isDriver) {
+        if (!currentDriverId) {
+          console.error('Driver role detected but no driver_id found');
+          return false; // Fail secure - show nothing if we can't determine driver ID
+        }
         return driver.id === currentDriverId;
       }
       // Otherwise, apply the status filter
@@ -187,10 +247,7 @@ export default function DriverCalendarPage() {
           
           // Extract jobs from the day data
           // Jobs have customer_name property
-          const driverJobs: Job[] = dayData.filter(item => {
-            // Check if this item has job properties
-            return item.hasOwnProperty('customer_name') && item.hasOwnProperty('id') && item.hasOwnProperty('status');
-          }).map(item => item as unknown as Job);
+          const driverJobs: Job[] = dayData.filter(isJob);
           
           // Check for leaves from the separate leaves data for this specific date
           // Find all relevant leaves for this driver (approved and pending)
@@ -201,18 +258,10 @@ export default function DriverCalendarPage() {
           // Then check which leaves apply to the current date
           const driverLeaves: DriverLeave[] = allDriverLeaves.filter(leave => {
             if (process.env.NODE_ENV === 'development') {
-              // Parse dates without time zones affecting the date
-              const startDate = new Date(leave.start_date.split('T')[0] + 'T00:00:00');
-              const endDate = new Date(leave.end_date.split('T')[0] + 'T00:00:00');
-              const currentDate = new Date(date);
-              
-              // Normalize dates to compare only the date part (ignore time)
-              const normStartDate = new Date(startDate);
-              const normEndDate = new Date(endDate);
-              const normCurrentDate = new Date(currentDate);
-              normStartDate.setHours(0, 0, 0, 0);
-              normEndDate.setHours(0, 0, 0, 0);
-              normCurrentDate.setHours(0, 0, 0, 0);
+              // Use timezone-safe date functions
+              const leaveStartDate = startOfDay(parseISO(leave.start_date.split('T')[0]));
+              const leaveEndDate = startOfDay(parseISO(leave.end_date.split('T')[0]));
+              const checkDate = startOfDay(date);
               
               console.log(`Checking leave:`, {
                 driverId: leave.driver_id,
@@ -220,27 +269,19 @@ export default function DriverCalendarPage() {
                 leaveType: leave.leave_type,
                 rawStartDate: leave.start_date,
                 rawEndDate: leave.end_date,
-                startDate: startDate,
-                endDate: endDate,
-                currentDate: date,
-                normStartDate: normStartDate,
-                normEndDate: normEndDate,
-                normCurrentDate: normCurrentDate,
-                isInRange: normCurrentDate >= normStartDate && normCurrentDate <= normEndDate
+                leaveStartDate: leaveStartDate,
+                leaveEndDate: leaveEndDate,
+                checkDate: checkDate,
+                isInRange: isWithinInterval(checkDate, { start: leaveStartDate, end: leaveEndDate })
               });
             }
             
-            // Parse dates without time zones affecting the date
-            const startDate = new Date(leave.start_date.split('T')[0] + 'T00:00:00');
-            const endDate = new Date(leave.end_date.split('T')[0] + 'T00:00:00');
-            const currentDate = new Date(date);
+            // Use timezone-safe date functions
+            const leaveStartDate = startOfDay(parseISO(leave.start_date.split('T')[0]));
+            const leaveEndDate = startOfDay(parseISO(leave.end_date.split('T')[0]));
+            const checkDate = startOfDay(date);
             
-            // Normalize dates to compare only the date part (ignore time)
-            startDate.setHours(0, 0, 0, 0);
-            endDate.setHours(0, 0, 0, 0);
-            currentDate.setHours(0, 0, 0, 0);
-            
-            return currentDate >= startDate && currentDate <= endDate;
+            return isWithinInterval(checkDate, { start: leaveStartDate, end: leaveEndDate });
           });
           
           // Enhanced debug logging
@@ -305,33 +346,33 @@ export default function DriverCalendarPage() {
               const [pickupHour, pickupMinute] = job.pickup_time.split(':').map(Number);
               const startTime = `${pickupHour.toString().padStart(2, '0')}:${pickupMinute.toString().padStart(2, '0')}`;
               
-              // Calculate job duration - use service type to estimate duration
+              // Calculate job duration with improved validation
               let durationHours = 1; // Default fallback
               
-              // Try to get duration from service type patterns
-              if (job.service_type) {
-                // Look for duration patterns like "4Hrs", "2 Hours", etc.
-                const durationMatch = job.service_type.match(/(\d+)\s*(?:Hrs?|Hours?|H)/i);
-                if (durationMatch) {
-                  durationHours = parseInt(durationMatch[1]);
-                } 
-                // Handle common service types
-                else if (job.service_type.includes('Tour Package')) {
-                  // Tour packages typically 4-8 hours
-                  durationHours = 4;
-                }
-                else if (job.service_type.includes('Airport Transfer')) {
-                  // Airport transfers typically 2-3 hours
-                  durationHours = 2;
-                }
-                else if (job.service_type.includes('Hourly')) {
-                  // Look for numeric prefix in hourly services
-                  const hourlyMatch = job.service_type.match(/^([0-9]+)\s*Hour/i);
-                  if (hourlyMatch) {
-                    durationHours = parseInt(hourlyMatch[1]);
+              // Prioritize duration from job data if available
+              if (job.duration_hours) {
+                durationHours = job.duration_hours;
+              } else {
+                // Try to get duration from service type patterns as fallback
+                if (job.service_type) {
+                  const durationMatch = job.service_type.match(/(\d+)\s*(?:Hrs?|Hours?|H)/i);
+                  if (durationMatch) {
+                    durationHours = parseInt(durationMatch[1]);
+                  } else if (job.service_type.includes('Tour Package')) {
+                    durationHours = 4; // Typical tour package duration
+                  } else if (job.service_type.includes('Airport Transfer')) {
+                    durationHours = 2; // Typical airport transfer duration
+                  } else if (job.service_type.includes('Hourly')) {
+                    const hourlyMatch = job.service_type.match(/^([0-9]+)\s*Hour/i);
+                    if (hourlyMatch) {
+                      durationHours = parseInt(hourlyMatch[1]);
+                    }
                   }
                 }
               }
+              
+              // Validate duration is reasonable (0.5 to 24 hours)
+              durationHours = Math.max(0.5, Math.min(24, durationHours));
               
               // Calculate end time
               const totalMinutes = (pickupHour * 60 + pickupMinute) + (durationHours * 60);
@@ -362,18 +403,21 @@ export default function DriverCalendarPage() {
             });
             
             // Fill remaining hours with available blocks
+            // Create an occupancy map to optimize from O(n²) to O(n)
+            const occupiedHours = new Set<number>();
+            availabilityBlocksForDate.forEach(block => {
+              const blockStartHour = parseInt(block.startTime.split(':')[0]);
+              const blockEndHour = parseInt(block.endTime.split(':')[0]);
+              for (let h = blockStartHour; h < blockEndHour && h < 24; h++) {
+                occupiedHours.add(h);
+              }
+            });
+            
+            // Iterate through hours once and add available blocks for unoccupied hours
             for (let hour = 0; hour < 24; hour++) {
-              const startTime = `${hour.toString().padStart(2, '0')}:00`;
-              const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
-              
-              // Check if there's already a block for this time slot
-              const hasExistingBlock = availabilityBlocksForDate.some(block => {
-                const blockStartHour = parseInt(block.startTime.split(':')[0]);
-                const blockEndHour = parseInt(block.endTime.split(':')[0]);
-                return (blockStartHour <= hour && hour < blockEndHour);
-              });
-              
-              if (!hasExistingBlock) {
+              if (!occupiedHours.has(hour)) {
+                const startTime = `${hour.toString().padStart(2, '0')}:00`;
+                const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
                 availabilityBlocksForDate.push({
                   type: 'available',
                   startTime,
@@ -419,7 +463,8 @@ export default function DriverCalendarPage() {
 
         // Calculate today's stats - use the selected date as "today" for consistency with UI
         const selectedTodayDateString = format(selectedDate, 'yyyy-MM-dd');
-        const todayJobs = (calendarData?.calendar_data?.[selectedTodayDateString]?.[driver.id] || []) as Job[];
+        const todayRawData = calendarData?.calendar_data?.[selectedTodayDateString]?.[driver.id] || [];
+        const todayJobs = todayRawData.filter(isJob);
         const todayStats = {
           totalJobs: todayJobs.length,
           totalHours: todayJobs.reduce((sum, job) => sum + 1, 0), // Simplified
@@ -433,7 +478,8 @@ export default function DriverCalendarPage() {
         // Calculate yesterday's stats - use the day before the selected date
         const selectedYesterday = subDays(selectedDate, 1);
         const yesterdayDateString = format(selectedYesterday, 'yyyy-MM-dd');
-        const yesterdayJobs = (calendarData?.calendar_data?.[yesterdayDateString]?.[driver.id] || []) as Job[];
+        const yesterdayRawData = calendarData?.calendar_data?.[yesterdayDateString]?.[driver.id] || [];
+        const yesterdayJobs = yesterdayRawData.filter(isJob);
         const yesterdayStats = {
           totalJobs: yesterdayJobs.length,
           totalHours: yesterdayJobs.reduce((sum, job) => sum + 1, 0), // Simplified
@@ -630,6 +676,25 @@ export default function DriverCalendarPage() {
       </div>
     </Card>
   );
+
+  if (calendarError) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Card className="p-6 bg-red-900/20 border-red-500">
+          <p className="text-red-400 mb-4">Failed to load calendar data. Please try again.</p>
+          <Button 
+            onClick={() => {
+              // Invalidate the query to trigger a refetch
+              queryClient.invalidateQueries({ queryKey: ['jobs', 'calendar', DAYS_TO_SHOW] });
+            }}
+            variant="danger"
+          >
+            Retry
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -865,10 +930,8 @@ export default function DriverCalendarPage() {
                             // Calculate percentage of 24-hour day (1440 minutes)
                             const durationPercentage = (durationMinutes / 1440) * 100;
                             
-                            // Set minimum width for visibility (at least 2% for very short jobs)
-                            // But make sure longer jobs get appropriately wider
-                            const minPercentage = Math.max(2, Math.min(5, durationPercentage * 0.5));
-                            const widthPercent = Math.max(minPercentage, durationPercentage);
+                            // Use accurate width, let CSS handle overflow
+                            const widthPercent = Math.max(0.5, durationPercentage); // Minimum 0.5% for visibility
                             
                             if (process.env.NODE_ENV === 'development') {
                               console.log(`Block ${block.type} (${block.job?.id || block.leave?.id || 'N/A'}): ${durationMinutes} mins = ${durationPercentage.toFixed(1)}%, final width: ${widthPercent.toFixed(1)}%`);
@@ -880,7 +943,7 @@ export default function DriverCalendarPage() {
                             return (
                               <div
                                 key={`${block.driverId}-${block.startTime}-${idx}`}
-                                className={`absolute h-full ${bgColor} ${borderClass} cursor-pointer transition-all duration-200 hover:opacity-90 flex items-center text-sm ${textColor} overflow-hidden`}
+                                className={`absolute h-full ${bgColor} ${borderClass} cursor-pointer transition-all duration-200 hover:opacity-90 flex items-center text-sm ${textColor} ${widthPercent < 3 ? 'justify-center' : 'justify-start'} overflow-hidden`}
                                 style={{
                                   left: `${blockStartOffset}%`,
                                   width: `${widthPercent}%`,
@@ -903,7 +966,11 @@ export default function DriverCalendarPage() {
                                   }
                                 }}
                               >
-                                <span className="truncate px-1 font-medium">{displayText}</span>
+                                {widthPercent < 3 ? (
+                                  <span className="text-xs">•</span>
+                                ) : (
+                                  <span className="truncate px-1 font-medium">{displayText}</span>
+                                )}
                               </div>
                             );
                           })}
