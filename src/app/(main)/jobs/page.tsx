@@ -204,6 +204,13 @@ const JobsPage = () => {
       render: (job: ApiJob) => <HighlightedCell text={job.id} searchTerm={search} />
     },
     {
+      label: 'Passenger',
+      accessor: 'passenger_name',
+      filterable: true,
+      stringLabel: 'Passenger',
+      render: (job: ApiJob) => <HighlightedCell text={job.passenger_name} searchTerm={search} />
+    },
+    {
       label: 'Booking Ref',
       accessor: 'booking_ref',
       filterable: true,
