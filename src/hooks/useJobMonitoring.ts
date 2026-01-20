@@ -9,9 +9,10 @@ import {
   getActiveJobMonitoringAlertCount
 } from '@/services/api/jobMonitoringApi';
 import { JobMonitoringAlert as ApiJobMonitoringAlert } from '@/services/api/jobMonitoringApi';
+import { getAlertSettings } from '@/services/api/settingsApi';
 
 // Convert API alert to store alert format
-const convertApiAlertToStoreFormat = (apiAlert: ApiJobMonitoringAlert) => ({
+const convertApiAlertToStoreFormat = (apiAlert: ApiJobMonitoringAlert, maxAlertReminders: number = 3) => ({
   id: apiAlert.id,
   jobId: apiAlert.job_id,
   driverName: apiAlert.driver_name,
@@ -21,7 +22,7 @@ const convertApiAlertToStoreFormat = (apiAlert: ApiJobMonitoringAlert) => ({
   elapsedTime: apiAlert.elapsed_minutes,
   createdAt: apiAlert.created_at,
   dismissed: apiAlert.status !== 'active',
-  maxRemindersReached: apiAlert.reminder_count >= 3, // Assuming 3 is the max
+  maxRemindersReached: apiAlert.reminder_count >= maxAlertReminders,
   reminderCount: apiAlert.reminder_count,
 });
 
@@ -36,11 +37,20 @@ export const useJobMonitoring = () => {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  // Fetch alert settings
+  const { data: alertSettingsData } = useQuery({
+    queryKey: ['alert-settings'],
+    queryFn: getAlertSettings,
+    refetchInterval: 60000, // Refetch settings every minute
+  });
+
+  const maxAlertReminders = alertSettingsData?.alert_settings.max_alert_reminders ?? 3; // Default to 3 if not loaded
+
   // Handle success and update store when data arrives
   useEffect(() => {
     if (apiAlertsData) {
       // Convert API alerts to store format and update store
-      const storeAlerts = apiAlertsData.alerts.map(convertApiAlertToStoreFormat);
+      const storeAlerts = apiAlertsData.alerts.map(alert => convertApiAlertToStoreFormat(alert, maxAlertReminders));
       
       // Only update if the alerts have actually changed
       if (JSON.stringify(alerts) !== JSON.stringify(storeAlerts)) {
@@ -56,7 +66,7 @@ export const useJobMonitoring = () => {
         }
       }
     }
-  }, [apiAlertsData, alerts, updateAlerts]);
+  }, [apiAlertsData, alerts, updateAlerts, maxAlertReminders]);
 
   // Mutation to dismiss an alert
   const dismissAlertMutation = useMutation({

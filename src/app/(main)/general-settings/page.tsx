@@ -16,6 +16,8 @@ import {
   getEmailSettings,
   saveEmailSettings,
   testEmailSettings,
+  saveAlertSettings,
+  getAlertSettings,
   type EmailSettings,
   type TestEmailPayload
 } from '@/services/api/settingsApi';
@@ -190,10 +192,37 @@ export default function SettingsPage() {
     }
   };
 
-  const [activeCategory, setActiveCategory] = useState("General");
+  const [activeCategory, setActiveCategory] = useState(() => {
+    // Check URL hash first, then localStorage, then default to "General"
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && settingsCategories.some(cat => cat.name === hash)) {
+        return hash;
+      }
+      const savedCategory = localStorage.getItem('admin-settings-category');
+      if (savedCategory && settingsCategories.some(cat => cat.name === savedCategory)) {
+        return savedCategory;
+      }
+    }
+    return "General";
+  });
 
   // Job Monitoring for Alert Settings
   const { alerts, dismissAlert, startTrip, isDismissing, isStartingTrip } = useJobMonitoring();
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && settingsCategories.some(cat => cat.name === hash)) {
+        setActiveCategory(hash);
+        localStorage.setItem('admin-settings-category', hash);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
 
   // Fetch users and roles when User Management tab is active
@@ -232,20 +261,28 @@ export default function SettingsPage() {
   // Alert Settings handlers
   const handleSaveAlertSettings = async () => {
     try {
-      // In a real implementation, this would save to the backend
-      // For now, we'll just show a success message
-      toast.success('Alert settings saved successfully!');
+      console.log('Saving alert settings:', {
+        enable_audio_notifications: enableAudioNotifications,
+        enable_visual_alerts: enableVisualAlerts,
+        alert_volume: alertVolume,
+        pickup_threshold_minutes: pickupThresholdMinutes,
+        reminder_interval_minutes: reminderIntervalMinutes,
+        max_alert_reminders: maxAlertReminders,
+        alert_history_retention_hours: alertHistoryRetentionHours
+      });
       
-      // Example API call would be:
-      // await saveAlertSettings({
-      //   enableAudioNotifications,
-      //   enableVisualAlerts,
-      //   alertVolume,
-      //   pickupThresholdMinutes,
-      //   reminderIntervalMinutes,
-      //   maxAlertReminders,
-      //   alertHistoryRetentionHours
-      // });
+      const response = await saveAlertSettings({
+        enable_audio_notifications: enableAudioNotifications,
+        enable_visual_alerts: enableVisualAlerts,
+        alert_volume: alertVolume,
+        pickup_threshold_minutes: pickupThresholdMinutes,
+        reminder_interval_minutes: reminderIntervalMinutes,
+        max_alert_reminders: maxAlertReminders,
+        alert_history_retention_hours: alertHistoryRetentionHours
+      });
+      
+      console.log('Save response:', response);
+      toast.success('Alert settings saved successfully!');
     } catch (error) {
       console.error('Error saving alert settings:', error);
       toast.error('Failed to save alert settings');
@@ -402,6 +439,13 @@ export default function SettingsPage() {
     }
   };
   
+  // Load alert settings when Alert Settings tab is active
+  useEffect(() => {
+    if (activeCategory === "Alert Settings") {
+      loadAlertSettings();
+    }
+  }, [activeCategory]);
+  
   const validateEmailSettings = (): string | null => {
     if (!smtpHost.trim()) {
       return 'SMTP host is required';
@@ -527,6 +571,30 @@ export default function SettingsPage() {
     setMailPassword("");
     setSenderEmail("noreply@grepx.sg");
     toast.success('Email settings reset to defaults');
+  };
+  
+  // Load alert settings when Alert Settings tab is active
+  const loadAlertSettings = async () => {
+    try {
+      console.log('Loading alert settings...');
+      const data = await getAlertSettings();
+      console.log('Loaded alert settings data:', data);
+      const alertSettings = data.alert_settings;
+      
+      if (alertSettings) {
+        console.log('Setting alert states:', alertSettings);
+        setEnableAudioNotifications(alertSettings.enable_audio_notifications);
+        setEnableVisualAlerts(alertSettings.enable_visual_alerts);
+        setAlertVolume(alertSettings.alert_volume);
+        setPickupThresholdMinutes(alertSettings.pickup_threshold_minutes);
+        setReminderIntervalMinutes(alertSettings.reminder_interval_minutes);
+        setMaxAlertReminders(alertSettings.max_alert_reminders);
+        setAlertHistoryRetentionHours(alertSettings.alert_history_retention_hours);
+      }
+    } catch (err) {
+      console.error('Failed to load alert settings:', err);
+      toast.error('Failed to load alert settings');
+    }
   };
   
   // Example save handler for General Settings
@@ -1017,7 +1085,14 @@ export default function SettingsPage() {
               return (
                 <button
                   key={category.name}
-                  onClick={() => setActiveCategory(category.name)}
+                  onClick={() => {
+                    setActiveCategory(category.name);
+                    // Update URL hash and localStorage
+                    if (typeof window !== 'undefined') {
+                      window.location.hash = category.name;
+                      localStorage.setItem('admin-settings-category', category.name);
+                    }
+                  }}
                   className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center space-x-3 ${
                     activeCategory === category.name
                       ? "bg-blue-600 text-white"
@@ -1905,79 +1980,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Active Alerts Section */}
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Active Monitoring Alerts</h3>
-                <div className="space-y-3">
-                  {alerts && alerts.length > 0 ? (
-                    alerts.map((alert) => (
-                      <div key={alert.id} className="border border-gray-600 rounded-lg p-4 bg-gray-750">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="font-medium text-white">Job #{alert.jobId}</span>
-                              <span className="text-sm text-gray-300">{alert.passengerDetails}</span>
-                              <span className="text-sm text-yellow-400 bg-yellow-900/50 px-2 py-1 rounded">
-                                {Math.floor(alert.elapsedTime)} min late
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div className="text-gray-300">
-                                <span className="text-gray-400">Driver:</span> {alert.driverName}
-                              </div>
-                              <div className="text-gray-300">
-                                <span className="text-gray-400">Pickup Time:</span> {new Date(alert.pickupTime).toLocaleString()}
-                              </div>
-                              <div className="text-gray-300">
-                                <span className="text-gray-400">Passenger:</span> {alert.passengerDetails}
-                              </div>
-                              <div className="text-gray-300">
-                                <span className="text-gray-400">Elapsed:</span> {Math.floor(alert.elapsedTime)} minutes
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2 ml-4">
-                            <button 
-                              onClick={() => {
-                                // Open job details in a new window/tab
-                                window.open(`/jobs/${alert.jobId}`, '_blank');
-                              }}
-                              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
-                            >
-                              View Job
-                            </button>
-                            <button 
-                              onClick={() => startTrip(alert.jobId)}
-                              className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors"
-                              disabled={isStartingTrip}
-                            >
-                              Start Trip
-                            </button>
-                            <a 
-                              href={`tel:${alert.driverContact}`}
-                              className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded transition-colors flex items-center justify-center gap-1"
-                            >
-                              <PhoneIcon className="w-3 h-3" />
-                              Call
-                            </a>
-                            <button 
-                              onClick={() => dismissAlert(alert.id)}
-                              className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors"
-                              disabled={isDismissing}
-                            >
-                              Dismiss
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-4 text-gray-400">
-                      No active monitoring alerts
-                    </div>
-                  )}
-                </div>
-              </div>
+
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-3 pt-6">
