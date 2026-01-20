@@ -616,19 +616,7 @@ export default function DriverCalendarPage() {
           </>
         )}
 
-        {block.type === 'available' && (
-          <div className="text-xs">
-            <div className="font-bold mb-1">Available</div>
-            <div className="text-gray-300">{block.startTime} - {block.endTime}</div>
-          </div>
-        )}
 
-        {block.type === 'unavailable' && (
-          <div className="text-xs">
-            <div className="font-bold mb-1">Not Available</div>
-            <div className="text-gray-300">{block.startTime} - {block.endTime}</div>
-          </div>
-        )}
       </div>
     );
   };
@@ -881,39 +869,6 @@ export default function DriverCalendarPage() {
                         <div 
                           key={hour}
                           className="relative border-r border-gray-700 last:border-r-0 flex items-center justify-center min-h-16 bg-gray-800/30"
-                          onMouseEnter={(e) => {
-                            // Check if this cell is showing as unavailable (light gray) or available (dark gray)
-                            if (!hourBlocks.length) {
-                              if (hasLeaveForDay) {
-                                // Light gray - unavailable
-                                const tempBlock = {
-                                  type: 'unavailable' as const,
-                                  startTime: `${hour}:00`,
-                                  endTime: `${hour + 2}:00`,
-                                  driverId: driver.id,
-                                  date: format(selectedDate, 'yyyy-MM-dd')
-                                };
-                                setHoveredBlock({
-                                  block: tempBlock,
-                                  position: { x: e.clientX, y: e.clientY }
-                                });
-                              } else {
-                                // Dark gray - available
-                                const tempBlock = {
-                                  type: 'available' as const,
-                                  startTime: `${hour}:00`,
-                                  endTime: `${hour + 2}:00`,
-                                  driverId: driver.id,
-                                  date: format(selectedDate, 'yyyy-MM-dd')
-                                };
-                                setHoveredBlock({
-                                  block: tempBlock,
-                                  position: { x: e.clientX, y: e.clientY }
-                                });
-                              }
-                            }
-                          }}
-                          onMouseLeave={() => setHoveredBlock(null)}
                         >
                           {/* Show base availability only if there are no blocks for this hour */}
                           {!hourBlocks.length && (
