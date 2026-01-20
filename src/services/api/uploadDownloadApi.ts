@@ -1,5 +1,26 @@
 import { api } from '@/lib/api';
 
+export interface DuplicateMatch {
+  job_id: number;
+  passenger_name: string;
+  created_at: string;
+}
+
+export interface DuplicateRecord {
+  row_number: number;
+  duplicate_type: 'existing_db' | 'within_file' | 'both';
+  customer_name: string;
+  customer_id: number;
+  passenger_name: string;
+  pickup_location: string;
+  dropoff_location: string;
+  pickup_date: string;
+  pickup_time: string;
+  service_type: string;
+  matching_jobs: DuplicateMatch[];
+  matching_rows: number[];
+}
+
 export interface ExcelRow {
   row_number: number;
   customer: string;
@@ -23,11 +44,14 @@ export interface PreviewData {
   rows: ExcelRow[];
   column_mapping: Record<string, string>;
   available_columns: string[];
+  duplicates?: DuplicateRecord[];
+  preview_id?: string;
 }
 
 export interface UploadResult {
   success: boolean;
   processed_count: number;
+  duplicate_count?: number;
   skipped_count: number;
   created_jobs?: Array<{
     job_id: string;
@@ -35,6 +59,7 @@ export interface UploadResult {
     customer: string;
     pickup_date: string;
   }>;
+  job_ids?: number[];
   skipped_rows: Array<{
     row_number: number;
     reason: string;
@@ -104,9 +129,13 @@ export const uploadDownloadApi = {
   },
 
   // Confirm upload and create jobs
-  confirmUpload: async (previewData: PreviewData): Promise<UploadResult> => {
+  confirmUpload: async (previewData: PreviewData, allowDuplicates: boolean = false): Promise<UploadResult> => {
     try {
-      const response = await api.post<UploadResult>('/api/jobs/confirm-upload', previewData);
+      const requestData = {
+        ...previewData,
+        allow_duplicates: allowDuplicates
+      };
+      const response = await api.post<UploadResult>('/api/jobs/confirm-upload', requestData);
       return response.data;
     } catch (error) {
       console.error('Confirm upload error:', error);

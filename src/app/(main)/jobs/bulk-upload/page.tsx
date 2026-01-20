@@ -8,6 +8,7 @@ import {
   ArrowLeftIcon
 } from '@heroicons/react/24/outline';
 import ExcelUploadTable from '@/components/organisms/ExcelUploadTable';
+import DuplicateAlert, { type DuplicateRecord } from '@/components/organisms/DuplicateAlert';
 import { useUser } from '@/context/UserContext';
 import { uploadDownloadApi, type PreviewData as ApiPreviewData, type ExcelRow as ApiExcelRow } from '@/services/api/uploadDownloadApi';
 import NotAuthorizedPage from '@/app/not-authorized/page';
@@ -19,6 +20,7 @@ interface ExcelRow extends ApiExcelRow {
 // Extend the API PreviewData interface to use our extended ExcelRow
 interface PreviewData extends Omit<ApiPreviewData, 'rows'> {
   rows: ExcelRow[];
+  duplicates?: DuplicateRecord[];
 }
 
 export default function BulkUploadPage() {
@@ -29,12 +31,16 @@ export default function BulkUploadPage() {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
+  const [uploadStep, setUploadStep] = useState<'upload' | 'preview' | 'duplicate-alert'>('upload');
   const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
   const [selectedValidCount, setSelectedValidCount] = useState(0);
   const [uploadRequestId, setUploadRequestId] = useState<string | null>(null);
   const { user } = useUser();
   const role = (user?.roles?.[0]?.name || "guest").toLowerCase();
+
+  // Track upload session timeout (EC14: 30 minutes)
+  const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+  const [sessionTimestamp, setSessionTimestamp] = useState<number | null>(null);
 
   // Download template
   const handleDownloadTemplate = async () => {
@@ -86,11 +92,20 @@ export default function BulkUploadPage() {
       // Convert API data to our extended interface
       const data: PreviewData = {
         ...apiData,
-        rows: apiData.rows.map(row => ({ ...row, is_rejected: false }))
+        rows: apiData.rows.map(row => ({ ...row, is_rejected: false })),
+        duplicates: apiData.duplicates || []
       };
       
       setPreviewData(data);
-      setUploadStep('preview');
+      setSessionTimestamp(Date.now()); // EC14: Set session timestamp for timeout tracking
+      
+      // Check if there are duplicates - show alert instead of preview
+      if (data.duplicates && data.duplicates.length > 0) {
+        setUploadStep('duplicate-alert');
+      } else {
+        setUploadStep('preview');
+      }
+      
       toast.success(`File processed: ${data.valid_count} valid, ${data.error_count} errors`);
     } catch (error) {
       console.error('Upload error:', error);
@@ -161,10 +176,17 @@ export default function BulkUploadPage() {
   }, []);
 
   // Confirm upload with improved selection handling and race condition guard
-  const handleConfirmUpload = async () => {
+  const handleConfirmUpload = async (allowDuplicates: boolean = false) => {
     // Guard at function entry - prevent duplicate submissions
     if (isProcessing || uploadRequestId !== null) return;
     if (!previewData || (selectedValidCount === 0 && previewData.valid_count === 0)) return;
+
+    // Check session timeout (EC14: 30 minutes)
+    if (sessionTimestamp && Date.now() - sessionTimestamp > SESSION_TIMEOUT_MS) {
+      toast.error('Upload session expired. Please upload your file again.');
+      handleReset();
+      return;
+    }
 
     // Generate unique request ID for deduplication
     const requestId = crypto.randomUUID();
@@ -194,7 +216,15 @@ export default function BulkUploadPage() {
         rows: rowsToUpload
       };
 
-      const result = await uploadDownloadApi.confirmUpload(filteredData);
+      let result;
+      try {
+        result = await uploadDownloadApi.confirmUpload(filteredData, allowDuplicates);
+      } catch (networkError) {
+        // EC15: Network failure recovery - retry once after 1 second
+        console.error('Network error during upload, retrying...', networkError);
+        await new Promise(p => setTimeout(p, 1000));
+        result = await uploadDownloadApi.confirmUpload(filteredData, allowDuplicates);
+      }
 
       // Handle different response scenarios
       if (result.processed_count > 0) {
@@ -232,13 +262,16 @@ export default function BulkUploadPage() {
         // Some jobs were processed successfully
         if (result.skipped_count > 0) {
           // Some were processed, some were skipped
-          toast.success(`${result.processed_count} job(s) created successfully. ${result.skipped_count} duplicate(s) skipped.`);
+          const dupMsg = result.duplicate_count ? ` (including ${result.duplicate_count} that matched existing jobs)` : '';
+          toast.success(`${result.processed_count} job(s) created successfully${dupMsg}. ${result.skipped_count} duplicate(s) skipped.`);
         } else {
           // All were processed
-          toast.success(`${result.processed_count} job(s) created successfully!`);
+          const dupMsg = result.duplicate_count ? ` (including ${result.duplicate_count} that matched existing jobs)` : '';
+          toast.success(`${result.processed_count} job(s) created successfully${dupMsg}!`);
         }
 
-        // Stay on preview page instead of going to complete step
+        // Return to preview page instead of going to complete step
+        setUploadStep('preview');
       } else if (result.skipped_count > 0) {
         // No jobs processed, all were skipped
         const skipReasons = result.skipped_rows
@@ -269,9 +302,25 @@ export default function BulkUploadPage() {
     setSelectedRowNumbers([]);
     setSelectedValidCount(0);
     setUploadRequestId(null);
+    setSessionTimestamp(null); // EC14: Clear session timestamp
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Duplicate alert handlers
+  const handleDuplicateCreateAll = async () => {
+    await handleConfirmUpload(true);
+    setUploadStep('preview');
+  };
+
+  const handleDuplicateCancel = () => {
+    handleReset();
+    toast.error('Upload cancelled. No jobs were created.');
+  };
+
+  const handleDuplicateReview = () => {
+    setUploadStep('preview');
   };
   if (["driver"].includes(role)) {
   return <NotAuthorizedPage />;
@@ -280,6 +329,17 @@ export default function BulkUploadPage() {
   return (
   
 <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
+    {/* Duplicate Alert Modal */}
+    {uploadStep === 'duplicate-alert' && previewData?.duplicates && previewData.duplicates.length > 0 && (
+      <DuplicateAlert
+        duplicates={previewData.duplicates}
+        onCreateAll={handleDuplicateCreateAll}
+        onCancel={handleDuplicateCancel}
+        onReviewJobs={handleDuplicateReview}
+        isLoading={isProcessing}
+      />
+    )}
+
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -475,7 +535,7 @@ export default function BulkUploadPage() {
                   </button>
                   {(previewData.valid_count > 0 || selectedValidCount > 0) && (
                     <button
-                      onClick={handleConfirmUpload}
+                      onClick={() => handleConfirmUpload()}
                       disabled={isProcessing || uploadRequestId !== null || (selectedRowNumbers.length > 0 && selectedValidCount === 0)}
                       className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
