@@ -669,6 +669,16 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* JOB MONITORING ALERTS (FULL WIDTH) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 w-full"
+        >
+          <JobMonitoringAlertsPanel />
+        </motion.div>
+
         {/* TODAY'S JOBS TIMELINE (FULL WIDTH) */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -960,16 +970,6 @@ export default function DashboardPage() {
               </div>
             </Card>
           </div>
-        </motion.div>
-
-        {/* JOB MONITORING ALERTS (FULL WIDTH) */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 w-full"
-        >
-          <JobMonitoringAlertsPanel />
         </motion.div>
 
         {/* REVENUE INTELLIGENCE (FULL WIDTH) */}

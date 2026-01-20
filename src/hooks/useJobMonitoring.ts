@@ -10,6 +10,7 @@ import {
 } from '@/services/api/jobMonitoringApi';
 import { JobMonitoringAlert as ApiJobMonitoringAlert } from '@/services/api/jobMonitoringApi';
 import { getAlertSettings } from '@/services/api/settingsApi';
+import { toast } from 'react-hot-toast';
 
 // Convert API alert to store alert format
 const convertApiAlertToStoreFormat = (apiAlert: ApiJobMonitoringAlert, maxAlertReminders: number = 3) => ({
@@ -52,18 +53,20 @@ export const useJobMonitoring = () => {
       // Convert API alerts to store format and update store
       const storeAlerts = apiAlertsData.alerts.map(alert => convertApiAlertToStoreFormat(alert, maxAlertReminders));
       
-      // Only update if the alerts have actually changed
+      // Play audio notification for new alerts before updating store
+      const previousAlertIds = new Set(alerts.map(alert => alert.id));
+      const newAlerts = storeAlerts.filter(storeAlert => 
+        !previousAlertIds.has(storeAlert.id)
+      );
+      
+      if (newAlerts.length > 0) {
+        // Only play notification if we have actual new alerts
+        playAudioNotification();
+      }
+      
+      // Update store if alerts have changed
       if (JSON.stringify(alerts) !== JSON.stringify(storeAlerts)) {
         updateAlerts(storeAlerts);
-        
-        // Play audio notification if new alerts appeared
-        const newAlerts = storeAlerts.filter(storeAlert => 
-          !alerts.some(existingAlert => existingAlert.id === storeAlert.id)
-        );
-        
-        if (newAlerts.length > 0) {
-          playAudioNotification();
-        }
       }
     }
   }, [apiAlertsData, alerts, updateAlerts, maxAlertReminders]);
@@ -83,6 +86,9 @@ export const useJobMonitoring = () => {
   // Mutation to start a trip (update job status to OTW)
   const startTripMutation = useMutation({
     mutationFn: (jobId: number) => updateJobStatusToOtw(jobId),
+    onMutate: (jobId) => {
+      toast.loading(`Starting trip for Job #${jobId}...`, { id: `start-trip-${jobId}` });
+    },
     onSuccess: (_, jobId) => {
       // Update local store to remove the alert
       const alert = alerts.find(a => a.jobId === jobId);
@@ -92,6 +98,13 @@ export const useJobMonitoring = () => {
       
       // Invalidate and refetch to sync with server
       queryClient.invalidateQueries({ queryKey: ['job-monitoring-alerts'] });
+      
+      // Show success toast
+      toast.success(`Job #${jobId} is now on the way!`, { id: `start-trip-${jobId}` });
+    },
+    onError: (error, jobId) => {
+      // Show error toast
+      toast.error(`Failed to start trip for Job #${jobId}. Please try again.`, { id: `start-trip-${jobId}` });
     },
   });
 
