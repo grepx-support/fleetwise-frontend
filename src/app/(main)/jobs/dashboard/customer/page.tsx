@@ -89,7 +89,12 @@ const CustomerDashboardPage = () => {
         const response = await axios.get(`/api/invoices`, {
           params: { customer_id: user.customer_id }
         });
-        setFetchedInvoices(response.data);
+        // Transform invoice data to ensure total_amount is a proper number, not a string with leading zeros
+        const transformedInvoices = response.data.map((invoice: any) => ({
+          ...invoice,
+          total_amount: typeof invoice.total_amount === 'string' ? parseFloat(invoice.total_amount) : Number(invoice.total_amount),
+        }));
+        setFetchedInvoices(transformedInvoices);
       } catch (error) {
         console.error("Error fetching invoices:", error);
         setFetchedInvoices([]);
