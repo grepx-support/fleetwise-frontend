@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '../../context/UserContext';
 import Link from 'next/link';
-import { getUserRole } from '@/utils/roleUtils';
+import { getPrimaryRole } from '@/utils/getUserRole';
+
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -13,18 +14,25 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const router = useRouter();
   const { login, isLoggedIn, isLoading, user } = useUser();
-  const role = getUserRole(user);
 
   // Redirect if already logged in
   useEffect(() => {
     if (!isLoading && isLoggedIn && user) {
-if (role === 'admin') {
-  router.replace('/dashboard');
-} else {
-  router.replace('/jobs');
-}
+      // Extract role from user data
+      const primaryRole = getPrimaryRole(user);
+      
+      console.log('Login page redirect - user:', user);
+      console.log('Login page redirect - primaryRole:', primaryRole);
+      
+      if (primaryRole === 'admin') {
+        router.replace('/dashboard');
+      } else if (primaryRole === 'customer') {
+        router.replace('/jobs/dashboard/customer');
+      } else {
+        router.replace('/jobs');
+      }
     }
-  }, [isLoggedIn, isLoading, user, role, router]);
+  }, [isLoggedIn, isLoading, user, router]);
 
   // Don't render form while checking authentication or if already logged in
   if (isLoading || isLoggedIn) {
@@ -48,7 +56,8 @@ if (role === 'admin') {
       setLoading(false);
 
       if (result.success) {
-        router.replace('/dashboard');
+        // Redirect will be handled by useEffect when user context updates
+        // The useEffect watches for isLoggedIn and user changes
       } else {
         // Display the specific error message from the backend
         let errorMsg = result.error || 'Invalid email or password';
