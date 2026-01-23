@@ -3,20 +3,31 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '../context/UserContext';
+import { getPrimaryRole } from '@/utils/getUserRole';
 
 export default function RootPage() {
-  const { isLoggedIn, isLoading } = useUser();
+  const { isLoggedIn, isLoading, user } = useUser();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading) {
-      if (isLoggedIn) {
+    if (!isLoading && isLoggedIn && user) {
+      // Extract role from user data
+      const primaryRole = getPrimaryRole(user);
+      
+      console.log('Root page redirect - user:', user);
+      console.log('Root page redirect - primaryRole:', primaryRole);
+      
+      if (primaryRole === 'admin') {
         router.replace('/dashboard');
+      } else if (primaryRole === 'customer') {
+        router.replace('/jobs/dashboard/customer');
       } else {
-        router.replace('/login');
+        router.replace('/jobs');
       }
+    } else if (!isLoading && !isLoggedIn) {
+      router.replace('/login');
     }
-  }, [isLoggedIn, isLoading, router]);
+  }, [isLoggedIn, isLoading, user, router]);
 
   // Show loading while determining redirect
   return (
