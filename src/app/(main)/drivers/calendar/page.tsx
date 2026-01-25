@@ -349,8 +349,21 @@ export default function DriverCalendarPage() {
               // Calculate job duration with improved validation
               let durationHours = 1; // Default fallback
               
-              // Prioritize duration from job data if available
-              if (job.duration_hours) {
+              // Prioritize dropoff_time if available for duration calculation
+              if (job.dropoff_time) {
+                // Calculate duration based on dropoff_time
+                const [dropoffHour, dropoffMinute] = job.dropoff_time.split(':').map(Number);
+                const pickupTotalMinutes = pickupHour * 60 + pickupMinute;
+                const dropoffTotalMinutes = dropoffHour * 60 + dropoffMinute;
+                
+                // Handle case where dropoff is on next day (assumed to be same day for now)
+                let durationMinutes = dropoffTotalMinutes - pickupTotalMinutes;
+                if (durationMinutes <= 0) {
+                  durationMinutes += 24 * 60; // Add 24 hours if negative (next day)
+                }
+                
+                durationHours = durationMinutes / 60;
+              } else if (job.duration_hours) {
                 durationHours = job.duration_hours;
               } else {
                 // Try to get duration from service type patterns as fallback
