@@ -13,7 +13,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const router = useRouter();
   const { login, isLoggedIn, isLoading, user } = useUser();
-  const role = getUserRole(user);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -56,21 +55,8 @@ export default function LoginPage() {
       setLoading(false);
 
       if (result.success) {
-        // Get user role from context (user is already set after successful login)
-        const userRole = getUserRole(user);
-        
-        // Role-based redirect after login
-        if (userRole === 'admin') {
-          router.replace('/dashboard');
-        } else if (userRole === 'customer') {
-          router.replace('/jobs/dashboard/customer');
-        } else if (userRole === 'manager') {
-          router.replace('/dashboard');
-        } else if (userRole === 'accountant') {
-          router.replace('/jobs');
-        } else {
-          router.replace('/jobs');
-        }
+        // Redirect will be handled by useEffect when user context updates
+        // The useEffect watches for isLoggedIn and user changes
       } else {
         // Display the specific error message from the backend
         let errorMsg = result.error || 'Invalid email or password';

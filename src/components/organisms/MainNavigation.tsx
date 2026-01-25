@@ -39,8 +39,7 @@ import { useMediaQuery } from 'react-responsive';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { useMemo } from "react";
-import { roleAccessRules } from "@/config/roleAccess";
-import { extractUserRole } from "@/utils/auth";
+
 import { getUserRole } from "@/utils/roleUtils";
 
 interface NavItem {
@@ -221,7 +220,13 @@ return cleanHref === pat;
         ...section,
         items: section.items.map(item => {
           if (item.label === "Dashboard") {
-            const dashboardHref = user && getUserRole(user) === 'customer' ? "/jobs/dashboard/customer" : "/dashboard";
+            const role = user ? getUserRole(user) : undefined;
+            let dashboardHref = "/dashboard";
+            if (role === "customer") {
+              dashboardHref = "/jobs/dashboard/customer";
+            } else if (role === "accountant") {
+              dashboardHref = "/jobs";
+            }
             return { ...item, href: dashboardHref };
           }
           return item;

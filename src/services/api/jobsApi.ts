@@ -130,6 +130,8 @@ export async function getJobs(filters: JobFilters = {}): Promise<JobsResponse> {
   const response = await api.get<JobsResponse>(`/api/jobs/table?${params.toString()}`);
   const processedItems = response.data.items.map(job => ({
     ...job,
+    // Ensure final_price is a proper number, not a string with leading zeros
+    final_price: typeof job.final_price === 'string' ? parseFloat(job.final_price) : Number(job.final_price),
     extra_services: parseExtraServices(job.extra_services)
   }));
 
