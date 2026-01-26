@@ -286,26 +286,15 @@ export default function BulkUploadPreviewPage() {
         toast(`No jobs created (${result.skipped_count} duplicates detected)`);
       }
 
-      // Update rows with job_id from response and mark skipped rows as duplicates
+      // Update rows with job_id from response - keep jobs in original sections
       const updatedRows = previewData.rows.map(row => {
         // Check if this row was successfully created
         const createdJob = result.created_jobs?.find(j => j.row_number === row.row_number);
         if (createdJob) {
           console.log(`Row ${row.row_number} was created with job_id: ${createdJob.job_id}`);
+          // Only add job_id, keep original category/status
           return { ...row, job_id: createdJob.job_id };
         }
-        
-        // Check if this row was skipped (duplicate in database)
-        const skippedRow = result.skipped_rows?.find(r => r.row_number === row.row_number);
-        if (skippedRow) {
-          console.log(`Marking row ${row.row_number} as duplicate:`, skippedRow);
-          return {
-            ...row,
-            is_valid: false,
-            error_message: `Duplicate in database - ${skippedRow.reason}`
-          };
-        }
-        
         return row;
       });
       
@@ -375,22 +364,13 @@ export default function BulkUploadPreviewPage() {
         toast(`No jobs were created (${result.skipped_count} skipped)`);
       }
       
-      // Update preview data: add job_id to created rows and mark as valid, mark skipped as duplicates
+      // Update preview data: add job_id to created rows - keep in original section
       const updatedRows = previewData.rows.map(row => {
         const createdJob = result.created_jobs?.find(j => j.row_number === row.row_number);
         if (createdJob) {
-          return { ...row, job_id: createdJob.job_id, is_valid: true, error_message: '' };
+          // Only add job_id, keep original category/status
+          return { ...row, job_id: createdJob.job_id };
         }
-        
-        const skippedRow = result.skipped_rows?.find(r => r.row_number === row.row_number);
-        if (skippedRow) {
-          return {
-            ...row,
-            is_valid: false,
-            error_message: `Duplicate in database - ${skippedRow.reason}`
-          };
-        }
-        
         return row;
       });
       
@@ -454,22 +434,13 @@ export default function BulkUploadPreviewPage() {
         toast(`No jobs were created (${result.skipped_count} skipped)`);
       }
       
-      // Update preview data: add job_id to created rows and mark as valid, mark skipped as duplicates
+      // Update preview data: add job_id to created rows - keep in original section
       const updatedRows = previewData.rows.map(row => {
         const createdJob = result.created_jobs?.find(j => j.row_number === row.row_number);
         if (createdJob) {
-          return { ...row, job_id: createdJob.job_id, is_valid: true, error_message: '' };
+          // Only add job_id, keep original category/status
+          return { ...row, job_id: createdJob.job_id };
         }
-        
-        const skippedRow = result.skipped_rows?.find(r => r.row_number === row.row_number);
-        if (skippedRow) {
-          return {
-            ...row,
-            is_valid: false,
-            error_message: `Duplicate in database - ${skippedRow.reason}`
-          };
-        }
-        
         return row;
       });
       
@@ -526,22 +497,13 @@ export default function BulkUploadPreviewPage() {
         toast(`No jobs were created (${result.skipped_count} skipped)`);
       }
       
-      // Update preview data: add job_id to created rows and mark as valid, mark skipped as duplicates
+      // Update preview data: add job_id to created rows - keep in original section
       const updatedRows = previewData.rows.map(row => {
         const createdJob = result.created_jobs?.find(j => j.row_number === row.row_number);
         if (createdJob) {
-          return { ...row, job_id: createdJob.job_id, is_valid: true, error_message: '' };
+          // Only add job_id, keep original category/status
+          return { ...row, job_id: createdJob.job_id };
         }
-        
-        const skippedRow = result.skipped_rows?.find(r => r.row_number === row.row_number);
-        if (skippedRow) {
-          return {
-            ...row,
-            is_valid: false,
-            error_message: `Duplicate in database - ${skippedRow.reason}`
-          };
-        }
-        
         return row;
       });
       
@@ -573,9 +535,20 @@ export default function BulkUploadPreviewPage() {
       const revalidatedRow = revalidationResult.rows[0];
 
       // Update the row in previewData with the revalidated data
-      const updatedRows = previewData.rows.map(row => 
-        row.row_number === rowNumber ? { ...row, ...updatedRow, ...revalidatedRow } : row
-      );
+      // BUT: keep the original is_valid and error_message to keep row in its original section
+      const updatedRows = previewData.rows.map(row => {
+        if (row.row_number === rowNumber) {
+          const currentRow = previewData.rows.find(r => r.row_number === rowNumber);
+          return {
+            ...row,
+            ...updatedRow,
+            // Keep original validation status - don't move rows between sections
+            is_valid: currentRow?.is_valid ?? revalidatedRow.is_valid,
+            error_message: currentRow?.error_message ?? revalidatedRow.error_message
+          };
+        }
+        return row;
+      });
 
       // Update preview data with the modified row
       setPreviewData({
@@ -585,7 +558,7 @@ export default function BulkUploadPreviewPage() {
 
       // Show appropriate message
       if (revalidatedRow.is_valid) {
-        toast.success('Row updated and is now valid!');
+        toast.success('Row updated! (Fixed but staying in current section)');
       } else {
         toast(`Row updated but still has validation errors: ${revalidatedRow.error_message}`);
       }

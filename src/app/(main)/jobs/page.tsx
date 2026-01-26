@@ -302,7 +302,7 @@ const JobsPage = () => {
           addLabel="Add Job"
           extraActions={
             <>
-              <AnimatedButton onClick={() => router.push('/jobs/bulk-upload')} variant="outline" className="flex items-center text-xs">
+              <AnimatedButton onClick={() => router.push('/jobs/bulk-upload')} variant="outline" className="flex items-center">
                 <Upload className="mr-2 h-4 w-4" />
                 Bulk Upload
               </AnimatedButton>
