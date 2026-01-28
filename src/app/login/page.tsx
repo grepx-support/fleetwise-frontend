@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '../../context/UserContext';
 import Link from 'next/link';
 import { getUserRole } from '@/utils/roleUtils';
+import { formatUtcForDisplay } from '@/utils/timezoneUtils';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -63,10 +64,9 @@ export default function LoginPage() {
 
         // If account is locked and we have the locked_until timestamp, append it to the message
         if (result.locked_until) {
-          // Convert UTC time to local time for display
-          const lockedUntilDate = new Date(result.locked_until + ' UTC');
-          const localTime = lockedUntilDate.toLocaleString();
-          errorMsg += ` (Account locked until: ${localTime})`;
+          // Convert UTC time to display timezone for display
+          const displayTime = formatUtcForDisplay(result.locked_until, 'datetime');
+          errorMsg += ` (Account locked until: ${displayTime})`;
         }
 
         setError(errorMsg);

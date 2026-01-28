@@ -46,4 +46,30 @@ export const jobSchema = z.object({
 }, {
   message: 'Vehicle and driver are required for confirmed jobs',
   path: ['vehicle_id'],
+}).refine((data) => {
+  // Validate that pickup time is not in the past for today's jobs
+  if (data.pickup_date && data.pickup_time) {
+    const pickupDate = new Date(data.pickup_date);
+    const today = new Date();
+    
+    // Reset time parts for date comparison
+    pickupDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    // If pickup date is today, check time
+    if (pickupDate.getTime() === today.getTime()) {
+      const pickupDateTime = new Date(`${data.pickup_date}T${data.pickup_time}`);
+      const now = new Date();
+      
+      // Reset milliseconds for comparison
+      pickupDateTime.setMilliseconds(0);
+      now.setMilliseconds(0);
+      
+      return pickupDateTime >= now;
+    }
+  }
+  return true;
+}, {
+  message: 'Pickup time cannot be in the past',
+  path: ['pickup_time'],
 }); 

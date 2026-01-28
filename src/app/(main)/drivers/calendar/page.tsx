@@ -7,6 +7,7 @@ import { useUser } from '@/context/UserContext';
 import { Card } from '@/components/atoms/Card';
 import { Button } from '@/components/atoms/Button';
 import { format, addDays, subDays, parseISO, differenceInHours, isSameDay, isToday, isYesterday, startOfDay, isWithinInterval } from 'date-fns';
+import { formatDisplayDate, parseDisplayDate } from '@/utils/timezoneUtils';
 import { 
   TruckIcon, 
   UserIcon, 
@@ -260,8 +261,9 @@ export default function DriverCalendarPage() {
           const driverLeaves: DriverLeave[] = allDriverLeaves.filter(leave => {
             if (process.env.NODE_ENV === 'development') {
               // Use timezone-safe date functions
-              const leaveStartDate = startOfDay(parseISO(leave.start_date.split('T')[0]));
-              const leaveEndDate = startOfDay(parseISO(leave.end_date.split('T')[0]));
+              // Parse the leave dates which come from backend in DD/MM/YYYY format
+              const leaveStartDate = startOfDay(parseDisplayDate(leave.start_date));
+              const leaveEndDate = startOfDay(parseDisplayDate(leave.end_date));
               const checkDate = startOfDay(date);
               
               console.log(`Checking leave:`, {
@@ -278,8 +280,9 @@ export default function DriverCalendarPage() {
             }
             
             // Use timezone-safe date functions
-            const leaveStartDate = startOfDay(parseISO(leave.start_date.split('T')[0]));
-            const leaveEndDate = startOfDay(parseISO(leave.end_date.split('T')[0]));
+            // Parse the leave dates which come from backend in DD/MM/YYYY format
+            const leaveStartDate = startOfDay(new Date(leave.start_date));
+            const leaveEndDate = startOfDay(new Date(leave.end_date));
             const checkDate = startOfDay(date);
             
             return isWithinInterval(checkDate, { start: leaveStartDate, end: leaveEndDate });

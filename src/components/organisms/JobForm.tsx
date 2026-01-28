@@ -34,6 +34,7 @@ import PhoneInput from '@/components/molecules/PhoneInput';
 import { useUser } from '@/context/UserContext';
 import { getUserRole } from '@/utils/roleUtils';
 import { useGetVehicleById } from '@/hooks/useVehicles';
+import { convertDisplayToUtc, formatDisplayDate, formatDisplayTime } from '@/utils/timezoneUtils';
 
 import { 
   createJob, 
@@ -57,6 +58,18 @@ export const analytics = {
     console.log(`[Analytics] Event: ${eventName}`, payload || {});
   }
 };
+
+// Helper function to format date from API to display format
+const formatDateFromApi = (dateString: string): string => {
+  // The API returns dates in DD/MM/YYYY format, so we can use as is
+  // If the date is in ISO format from the API, convert to DD/MM/YYYY
+  if (dateString.includes('-')) { // ISO format
+    const date = new Date(dateString);
+    return formatDisplayDate(date);
+  }
+  return dateString; // DD/MM/YYYY format
+};
+
 // Default job values
 const defaultJobValues: JobFormData = {
   // Customer Information
@@ -1316,11 +1329,17 @@ if (!driverExists) {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const { pickup_date, pickup_time, ...rest } = formData;
-    const pickupDateTime = new Date(`${pickup_date}T${pickup_time}`);
+    // Convert the display date/time to UTC for API submission
+    const displayDateTime = new Date(`${pickup_date} ${pickup_time}`);
+    const utcDateTime = convertDisplayToUtc(displayDateTime);
+
+    // Extract date and time in the format expected by backend (DD/MM/YYYY and HH:MM)
+    const formattedDate = formatDisplayDate(utcDateTime);
+    const formattedTime = formatDisplayTime(utcDateTime);
 
     const submitData = {
-      pickup_date: pickupDateTime.toISOString(),
-      pickup_time,
+      pickup_date: formattedDate,
+      pickup_time: formattedTime,
       ...rest
     };
 
