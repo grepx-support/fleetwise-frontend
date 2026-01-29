@@ -34,7 +34,7 @@ import PhoneInput from '@/components/molecules/PhoneInput';
 import { useUser } from '@/context/UserContext';
 import { getUserRole } from '@/utils/roleUtils';
 import { useGetVehicleById } from '@/hooks/useVehicles';
-import { convertDisplayToUtc, formatDisplayDate, formatDisplayTime } from '@/utils/timezoneUtils';
+import { convertDisplayToUtc, formatDisplayDate, formatDisplayTime, formatUtcForDisplay, formatHtmlDateInput, getDisplayTimezone } from '@/utils/timezoneUtils';
 
 import { 
   createJob, 
@@ -481,12 +481,23 @@ const JobForm: React.FC<JobFormProps> = (props) => {
   const [userModifiedLocationPrices, setUserModifiedLocationPrices] = useState<Set<string>>(new Set());
   const [userDirectlyEditedLocationPrices, setUserDirectlyEditedLocationPrices] = useState<Set<string>>(new Set());
 
-  // Get current date and time for defaults
+  // Get current date and time for defaults in user's configured timezone
   const getCurrentDateTime = () => {
+    // Get the current time
     const now = new Date();
-    const date = now.toISOString().split('T')[0]; // YYYY-MM-DD format
-    const time = now.toTimeString().slice(0, 5); // HH:MM format
-    return { date, time };
+    
+    // Debug: Check what timezone is being used
+    const displayTimezone = getDisplayTimezone();
+    console.log('[JobForm] Current display timezone:', displayTimezone);
+    console.log('[JobForm] Raw localStorage userTimezone:', typeof window !== 'undefined' ? localStorage.getItem('userTimezone') : 'window undefined');
+    
+    // Format date for HTML input (yyyy-MM-dd) and time (HH:MM) in display timezone
+    const datePart = formatHtmlDateInput(now);
+    const timePart = formatDisplayTime(now);
+    
+    console.log('[JobForm] getCurrentDateTime - datePart:', datePart, 'timePart:', timePart);
+    
+    return { date: datePart, time: timePart };
   };
 
   // Normalize incoming initialData.vehicle_type to string if provided as object
@@ -880,6 +891,8 @@ if (!driverExists) {
     } else {
       // Set default values for new job
       const { date, time } = getCurrentDateTime();
+      
+      console.log('[JobForm] Setting default values - date:', date, 'time:', time);
       
       // Create initial form data with default values
       // Normalize any vehicle_type from initialData before merging

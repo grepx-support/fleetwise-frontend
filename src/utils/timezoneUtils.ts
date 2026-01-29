@@ -5,11 +5,81 @@
 
 /**
  * Get the configured display timezone
- * For now, defaults to Asia/Singapore, but can be extended to read from settings
+ * Reads from General Settings, defaults to Asia/Singapore
  */
 export function getDisplayTimezone(): string {
-  // In production, this would read from system settings or user preferences
-  // For now, defaulting to Asia/Singapore as per requirements
+  // Debug: Check what's in localStorage
+  if (typeof window !== 'undefined') {
+    console.log('[TimezoneUtils] localStorage contents:');
+    console.log('userTimezone:', localStorage.getItem('userTimezone'));
+    console.log('systemTimezone:', localStorage.getItem('systemTimezone'));
+    console.log('All localStorage keys:', Object.keys(localStorage));
+    
+    // Temporary test: Force SGT timezone
+    // localStorage.setItem('userTimezone', 'Asia/Singapore');
+  }
+  
+  // In production, this would read from:
+  // 1. User preferences (if logged in)
+  // 2. System General Settings
+  // 3. Default to Asia/Singapore
+  
+  // Check localStorage for user timezone setting
+  let savedTimezone = typeof window !== 'undefined' ? localStorage.getItem('userTimezone') : null;
+  
+  // If we have a saved timezone, map it from display format to IANA format
+  if (savedTimezone) {
+    console.log('[TimezoneUtils] Raw saved timezone from localStorage:', savedTimezone);
+    
+    // Map display timezone names to IANA timezone identifiers
+    const timezoneMap: Record<string, string> = {
+      'SGT': 'Asia/Singapore',
+      'PST': 'America/Los_Angeles',
+      'EST': 'America/New_York',
+      'CET': 'Europe/Paris',
+      'GMT': 'Europe/London',
+      'IST': 'Asia/Kolkata',
+      'JST': 'Asia/Tokyo',
+      'AEST': 'Australia/Sydney',
+    };
+    
+    // If it's a mapped value, return the IANA equivalent
+    if (savedTimezone in timezoneMap) {
+      console.log('[TimezoneUtils] Mapped saved timezone:', savedTimezone, 'to', timezoneMap[savedTimezone]);
+      return timezoneMap[savedTimezone];
+    }
+    
+    console.log('[TimezoneUtils] Using saved timezone (no mapping needed):', savedTimezone);
+    return savedTimezone;
+  }
+  
+  // Check for system timezone setting
+  let systemTimezone = typeof window !== 'undefined' ? localStorage.getItem('systemTimezone') : null;
+  
+  if (systemTimezone) {
+    // Also map system timezone if needed
+    const timezoneMap: Record<string, string> = {
+      'SGT': 'Asia/Singapore',
+      'PST': 'America/Los_Angeles',
+      'EST': 'America/New_York',
+      'CET': 'Europe/Paris',
+      'GMT': 'Europe/London',
+      'IST': 'Asia/Kolkata',
+      'JST': 'Asia/Tokyo',
+      'AEST': 'Australia/Sydney',
+    };
+    
+    if (systemTimezone in timezoneMap) {
+      console.log('[TimezoneUtils] Mapped system timezone:', systemTimezone, 'to', timezoneMap[systemTimezone]);
+      return timezoneMap[systemTimezone];
+    }
+    
+    console.log('[TimezoneUtils] Using system timezone:', systemTimezone);
+    return systemTimezone;
+  }
+  
+  // Default to Asia/Singapore as per current requirements
+  console.log('[TimezoneUtils] Using default timezone: Asia/Singapore');
   return "Asia/Singapore";
 }
 
@@ -166,12 +236,38 @@ export function formatDisplayDate(date: Date): string {
 }
 
 /**
- * Format a Date object to time format (HH:MM)
+ * Format a Date object to HTML date input format (yyyy-MM-dd) in display timezone
+ * @param date - Date object
+ * @returns Date string in yyyy-MM-dd format for HTML date inputs
+ */
+export function formatHtmlDateInput(date: Date): string {
+  const displayTimezone = getDisplayTimezone();
+  
+  // Format as yyyy-MM-dd in the display timezone
+  const formatter = new Intl.DateTimeFormat('fr-CA', {
+    timeZone: displayTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  
+  return formatter.format(date);
+}
+
+/**
+ * Format a Date object to time format (HH:MM) in display timezone
  * @param date - Date object
  * @returns Time string in HH:MM format
  */
 export function formatDisplayTime(date: Date): string {
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+  const displayTimezone = getDisplayTimezone();
+  
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: displayTimezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  
+  return formatter.format(date);
 }
