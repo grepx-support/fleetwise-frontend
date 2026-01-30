@@ -178,6 +178,11 @@ const JobsPage = () => {
     setPage(1);
   }, [filters, handleFilterChange, updateFilters]);
 
+  const handleClearFilter = useCallback((col: string) => {
+    handleFilterChange(col, '');
+    setPage(1);
+  }, [handleFilterChange]);
+
   const confirmDelete = async () => {
     if (pendingDeleteId == null) return;
     setDeletingId(pendingDeleteId);
@@ -222,7 +227,7 @@ const JobsPage = () => {
   if (["driver"].includes(role)) return <NotAuthorizedPage />;
 
   return (
-    <div className="w-full flex flex-col gap-4 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-4 sm:py-6 max-w-full">
+    <div className="mx-auto px-4 py-6 w-full flex flex-col gap-4">
       {!["driver"].includes(role) && (
         <EntityHeader
           title="Jobs"
@@ -245,12 +250,12 @@ const JobsPage = () => {
       )}
 
       {/* Search Bar */}
-      <div className="mb-4 w-full max-w-lg">
+      <div className="mb-4">
         <Input
           placeholder="Search jobs..."
           value={search}
           onChange={(e) => setSearch(e.target.value.trim())}
-          className="w-full"
+          className="max-w-md"
         />
       </div>
 
@@ -273,12 +278,12 @@ const JobsPage = () => {
       )}
 
       {/* Pagination Info */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-2">
+      <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-text-secondary">
           Showing {paginationInfo.total === 0 ? 0 : paginationInfo.startIdx}-{paginationInfo.endIdx} of {paginationInfo.total}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <label htmlFor="pageSize" className="text-xs text-text-secondary whitespace-nowrap">Rows per page:</label>
+        <div className="flex items-center gap-2">
+          <label htmlFor="pageSize" className="text-xs text-text-secondary">Rows per page:</label>
           <select
             id="pageSize"
             value={pageSize}
@@ -286,7 +291,7 @@ const JobsPage = () => {
               setPageSize(Number(e.target.value));
               setPage(1);
             }}
-            className="bg-background-light border border-border-color text-text-main rounded px-2 py-1 text-xs min-w-[70px]"
+            className="bg-background-light border border-border-color text-text-main rounded px-2 py-1 text-xs"
           >
             {[10, 20, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
           </select>
@@ -294,102 +299,111 @@ const JobsPage = () => {
       </div>
 
       {/* Jobs Table */}
-      <div className="flex-grow rounded-xl shadow-lg bg-background-light border border-border-color overflow-hidden">
-        <div className="w-full overflow-x-auto">
-          <div className="min-w-full sm:min-w-0">
-            <EntityTable
-              data={paginationInfo.paginatedJobs}
-              columns={columns.map(col => ({
-                ...col,
-                label: (
-                  <span className="inline-flex items-center gap-1 cursor-pointer select-none" onClick={() => handleSort(col.accessor as string)}>
-                    {col.label}
-                    {sortBy === col.accessor ? (
-                      sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline" /> : <ArrowDown className="w-3 h-3 inline" />
-                    ) : null}
-                  </span>
-                ),
-              }))}
-              isLoading={isLoading}
-              actions={jobActions}
-              renderExpandedRow={(job) => (
-                <div className="py-4 sm:py-6 px-4 sm:px-8">
-                  <JobDetailCard job={job} />
-                </div>
-              )}
-              rowClassName={(job) => expandedJobId === job.id ? 'bg-primary/10' : ''}
-              onRowClick={(job) => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
-              expandedRowId={expandedJobId}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Page Navigation */}
-      {paginationInfo.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1 sm:gap-2 mt-4 flex-wrap">
-          <button
-            onClick={() => setPage(Math.max(1, page - 1))}
-            disabled={page === 1}
-            className="px-3 py-2 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 min-w-[44px] flex items-center justify-center"
-          >
-            Previous
-          </button>
-          {Array.from({ length: paginationInfo.totalPages }, (_, i) => i + 1)
-            .filter(pageNum => 
-              pageNum === 1 || 
-              pageNum === paginationInfo.totalPages || 
-              (pageNum >= page - 1 && pageNum <= page + 1)
-            )
-            .map((pageNum, index, arr) => {
-              const showEllipsis = index > 0 && pageNum - arr[index - 1] > 1;
-              return (
-                <React.Fragment key={pageNum}>
-                  {showEllipsis && (
-                    <span className="px-2 py-2 text-sm text-text-secondary">...</span>
+      <div className="flex-grow rounded-xl shadow-lg bg-background-light border border-border-color overflow-hidden flex flex-col">
+        <div className="w-full overflow-x-auto flex-grow">
+          <EntityTable
+            data={paginationInfo.paginatedJobs}
+            columns={columns.map(col => ({
+              ...col,
+              label: (
+                <span className="inline-flex items-center gap-1 cursor-pointer select-none" onClick={() => handleSort(col.accessor as string)}>
+                  {col.label}
+                  {sortBy === col.accessor ? (
+                    sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline" /> : <ArrowDown className="w-3 h-3 inline" />
+                  ) : null}
+                </span>
+              ),
+              filterable: true,
+              stringLabel: col.stringLabel,
+              renderFilter: (value: string, onChange: (v: string) => void) => (
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    className="w-full bg-background-light border border-border-color text-text-main placeholder-text-secondary focus:ring-2 focus:ring-primary rounded px-2 py-1 text-xs mt-1 pr-6"
+                    placeholder={`Filter ${(col.stringLabel || col.accessor).toString().toLowerCase()}...`}
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                  />
+                  {value && (
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-text-secondary hover:text-red-500 text-xs"
+                      onClick={() => handleClearFilter(col.accessor as string)}
+                      tabIndex={-1}
+                      aria-label="Clear filter"
+                    >
+                      ×
+                    </button>
                   )}
-                  <button
-                    onClick={() => setPage(pageNum)}
-                    className={`px-3 py-2 text-sm rounded-lg font-medium transition-colors min-w-[44px] flex items-center justify-center ${
-                      pageNum === page
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                </React.Fragment>
-              );
-            })}
-          <button
-            onClick={() => setPage(Math.min(paginationInfo.totalPages, page + 1))}
-            disabled={page === paginationInfo.totalPages}
-            className="px-3 py-2 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 min-w-[44px] flex items-center justify-center"
-          >
-            Next
-          </button>
+                </div>
+              ),
+            }))}
+            isLoading={isLoading}
+            actions={jobActions}
+            renderExpandedRow={(job) => (
+              <div className="py-6 px-8">
+                <JobDetailCard job={job} />
+              </div>
+            )}
+            rowClassName={(job) => expandedJobId === job.id ? 'bg-primary/10' : ''}
+            onRowClick={(job) => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
+            expandedRowId={expandedJobId}
+            filters={localFilters}
+            onFilterChange={handleFilterChange}
+          />
         </div>
-      )}
+
+        {/* Page Navigation - Inside Table Container */}
+        {paginationInfo.totalPages > 1 && (
+          <div className="flex items-center justify-end gap-1 py-4 border-t border-border-color px-4">
+            <button
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page === 1}
+              className="px-2 py-1 text-sm rounded-lg font-medium transition-colors border border-border-color text-text-main hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              &lt;
+            </button>
+            {Array.from({ length: paginationInfo.totalPages }, (_, i) => i + 1).map((pageNum) => (
+              <button
+                key={pageNum}
+                onClick={() => setPage(pageNum)}
+                className={`px-2 py-1 text-sm rounded-lg font-medium transition-colors ${
+                  pageNum === page
+                    ? 'bg-primary text-white'
+                    : 'border border-border-color text-text-main hover:border-primary'
+                }`}
+              >
+                {pageNum}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage(Math.min(paginationInfo.totalPages, page + 1))}
+              disabled={page === paginationInfo.totalPages}
+              className="px-2 py-1 text-sm rounded-lg font-medium transition-colors border border-border-color text-text-main hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              &gt;
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       {showEditModal && editJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-background-light rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-y-auto mx-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-background-light rounded-xl shadow-2xl max-w-7xl w-full mx-4 p-6 relative">
             <button
-              className="absolute top-4 right-4 text-text-secondary hover:text-text-main z-10"
+              className="absolute top-4 right-4 text-text-secondary hover:text-text-main"
               onClick={handleCancelEdit}
               aria-label="Close edit modal"
             >
               &times;
             </button>
-            <div className="p-4 sm:p-6">
-              <JobForm
-                job={editJob}
-                onSave={handleSaveEdit}
-                onCancel={handleCancelEdit}
-                isLoading={false}
-              />
-            </div>
+            <JobForm
+              job={editJob}
+              onSave={handleSaveEdit}
+              onCancel={handleCancelEdit}
+              isLoading={false}
+            />
           </div>
         </div>
       )}
